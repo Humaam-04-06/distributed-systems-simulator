@@ -7,7 +7,7 @@ export interface SwitchProps {
   label?: string;
   description?: string;
   disabled?: boolean;
-  variant?: 'cyan' | 'emerald' | 'crimson' | 'amber';
+  variant?: 'blue' | 'emerald' | 'crimson' | 'amber';
   className?: string;
 }
 
@@ -17,14 +17,14 @@ export const Switch: React.FC<SwitchProps> = ({
   label,
   description,
   disabled = false,
-  variant = 'cyan',
+  variant = 'blue',
   className,
 }) => {
   const variantStyles = {
-    cyan: checked ? 'bg-cyan-500 shadow-glow-cyan' : 'bg-slate-800',
-    emerald: checked ? 'bg-emerald-500 shadow-glow-emerald' : 'bg-slate-800',
-    crimson: checked ? 'bg-rose-500 shadow-glow-crimson' : 'bg-slate-800',
-    amber: checked ? 'bg-amber-500 shadow-glow-amber' : 'bg-slate-800',
+    blue: checked ? 'bg-blue-600' : 'bg-surface-elevated',
+    emerald: checked ? 'bg-emerald-600' : 'bg-surface-elevated',
+    crimson: checked ? 'bg-rose-600' : 'bg-surface-elevated',
+    amber: checked ? 'bg-amber-600' : 'bg-surface-elevated',
   };
 
   return (
@@ -38,12 +38,12 @@ export const Switch: React.FC<SwitchProps> = ({
       {(label || description) && (
         <div className="flex flex-col mr-3">
           {label && (
-            <span className="text-xs font-mono font-medium text-slate-300 group-hover:text-slate-100 transition-colors">
+            <span className="text-xs font-sans font-medium text-slate-300 group-hover:text-slate-100 transition-colors">
               {label}
             </span>
           )}
           {description && (
-            <span className="text-[11px] text-slate-500">{description}</span>
+            <span className="text-[11px] text-slate-500 font-sans">{description}</span>
           )}
         </div>
       )}
@@ -54,13 +54,13 @@ export const Switch: React.FC<SwitchProps> = ({
         disabled={disabled}
         onClick={() => !disabled && onChange(!checked)}
         className={cn(
-          'relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-cyan-500/50',
+          'relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border border-surface-border transition-colors duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500/30',
           variantStyles[variant]
         )}
       >
         <span
           className={cn(
-            'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out',
+            'pointer-events-none inline-block h-3.5 w-3.5 mt-0.5 ml-0.5 transform rounded-full bg-white shadow-sm ring-0 transition duration-150 ease-in-out',
             checked ? 'translate-x-4' : 'translate-x-0'
           )}
         />
