@@ -36,23 +36,23 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   const statusBadge = {
     HEALTHY: {
       variant: 'emerald' as const,
-      label: 'SYSTEM HEALTHY',
-      icon: <ShieldCheck className="w-3 h-3" />,
+      label: 'System Healthy',
+      icon: <ShieldCheck className="w-3.5 h-3.5" />,
     },
     DEGRADED: {
       variant: 'amber' as const,
-      label: 'SYSTEM DEGRADED',
-      icon: <AlertTriangle className="w-3 h-3" />,
+      label: 'System Degraded',
+      icon: <AlertTriangle className="w-3.5 h-3.5" />,
     },
     CRITICAL: {
       variant: 'crimson' as const,
-      label: 'CRITICAL CONGESTION',
-      icon: <Flame className="w-3 h-3" />,
+      label: 'Critical Congestion',
+      icon: <Flame className="w-3.5 h-3.5" />,
     },
     COLLAPSED: {
       variant: 'crimson' as const,
-      label: '💀 SYSTEM COLLAPSE',
-      icon: <Flame className="w-3 h-3" />,
+      label: 'System Collapse 💀',
+      icon: <Flame className="w-3.5 h-3.5" />,
     },
   };
 
@@ -65,24 +65,24 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   const current = statusBadge[status];
 
   return (
-    <footer className="glass-panel border-t border-slate-800 px-4 py-1.5 flex items-center justify-between text-xs font-mono text-slate-400 sticky bottom-0 z-40 select-none">
+    <footer className="bg-surface/90 border-t border-surface-border px-5 py-2 flex items-center justify-between text-xs font-sans text-slate-400 sticky bottom-0 z-40 select-none backdrop-blur-md">
       {/* Left: Overall Health Badge */}
       <div className="flex items-center gap-3">
         <Badge variant={current.variant} size="sm" pulse>
-          <span className="flex items-center gap-1">
+          <span className="flex items-center gap-1.5 font-sans font-medium">
             {current.icon}
             {current.label}
           </span>
         </Badge>
 
-        <div className="h-3 w-px bg-slate-800" />
+        <div className="h-3 w-px bg-surface-border" />
 
         {/* Server Fleet State */}
         <div className="flex items-center gap-1.5">
           <Server className="w-3.5 h-3.5 text-slate-500" />
-          <span>SERVERS:</span>
+          <span className="text-slate-400 font-mono text-[11px]">SERVERS:</span>
           <span
-            className={`font-bold ${
+            className={`font-mono text-[11px] font-semibold ${
               activeServers === totalServers
                 ? 'text-emerald-400'
                 : activeServers > 0
@@ -90,38 +90,38 @@ export const StatusBar: React.FC<StatusBarProps> = ({
                 : 'text-rose-400'
             }`}
           >
-            {activeServers}/{totalServers} ALIVE
+            {activeServers}/{totalServers} Online
           </span>
         </div>
 
-        <div className="h-3 w-px bg-slate-800" />
+        <div className="h-3 w-px bg-surface-border" />
 
         {/* Database State */}
         <div className="flex items-center gap-1.5">
           <Database className="w-3.5 h-3.5 text-slate-500" />
-          <span>DB LEADER:</span>
+          <span className="text-slate-400 font-mono text-[11px]">DB PRIMARY:</span>
           <span
-            className={`font-bold ${
-              dbHealthy ? 'text-emerald-400' : 'text-rose-400 animate-pulse'
+            className={`font-mono text-[11px] font-semibold ${
+              dbHealthy ? 'text-emerald-400' : 'text-rose-400'
             }`}
           >
-            {dbHealthy ? 'SYNCED' : 'UNAVAILABLE'}
+            {dbHealthy ? 'Synced' : 'Offline'}
           </span>
         </div>
       </div>
 
       {/* Right: Telemetry Summaries */}
-      <div className="flex items-center gap-4 text-[11px]">
+      <div className="flex items-center gap-4 text-xs">
         <div className="flex items-center gap-1.5">
           <Gauge className="w-3.5 h-3.5 text-slate-500" />
-          <span>LATENCY:</span>
+          <span className="text-slate-400 font-mono text-[11px]">P99 LATENCY:</span>
           <span
-            className={`font-bold ${
+            className={`font-mono font-semibold ${
               avgLatency > 400
                 ? 'text-rose-400'
                 : avgLatency > 200
                 ? 'text-amber-400'
-                : 'text-cyan-400'
+                : 'text-slate-200'
             }`}
           >
             {avgLatency.toFixed(0)} ms
@@ -129,9 +129,9 @@ export const StatusBar: React.FC<StatusBarProps> = ({
         </div>
 
         <div className="flex items-center gap-1.5">
-          <span>ERROR RATE:</span>
+          <span className="text-slate-400 font-mono text-[11px]">ERROR RATE:</span>
           <span
-            className={`font-bold ${
+            className={`font-mono font-semibold ${
               errorRate > 15
                 ? 'text-rose-400'
                 : errorRate > 5
@@ -144,16 +144,16 @@ export const StatusBar: React.FC<StatusBarProps> = ({
         </div>
 
         <div className="flex items-center gap-1.5">
-          <span>TOTAL PROCESSED:</span>
-          <span className="font-bold text-slate-200">
+          <span className="text-slate-400 font-mono text-[11px]">TOTAL PROCESSED:</span>
+          <span className="font-mono font-semibold text-slate-200">
             {totalRequests.toLocaleString()}
           </span>
         </div>
 
         <div className="flex items-center gap-1.5">
           <Clock className="w-3.5 h-3.5 text-slate-500" />
-          <span>UPTIME:</span>
-          <span className="text-slate-300">{formatUptime(uptimeSeconds)}</span>
+          <span className="text-slate-400 font-mono text-[11px]">UPTIME:</span>
+          <span className="font-mono text-slate-300">{formatUptime(uptimeSeconds)}</span>
         </div>
       </div>
     </footer>

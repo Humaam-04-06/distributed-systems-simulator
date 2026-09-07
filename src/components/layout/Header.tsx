@@ -35,19 +35,19 @@ export const Header: React.FC<HeaderProps> = ({
   chaosActive = false,
 }) => {
   return (
-    <header className="glass-panel border-b border-slate-800 px-4 py-2.5 flex items-center justify-between sticky top-0 z-50">
+    <header className="bg-surface/90 border-b border-surface-border px-5 py-3 flex items-center justify-between sticky top-0 z-50 backdrop-blur-md">
       {/* Brand & System Title */}
       <div className="flex items-center gap-3">
-        <div className="relative flex items-center justify-center w-9 h-9 rounded-lg bg-gradient-to-br from-cyan-500/20 to-blue-600/20 border border-cyan-500/40 shadow-glow-cyan">
-          <Activity className="w-5 h-5 text-cyan-400 animate-pulse" />
+        <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400">
+          <Activity className="w-4 h-4" />
         </div>
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-sm font-bold font-mono tracking-tight text-white uppercase">
+            <h1 className="text-sm font-semibold tracking-tight text-white font-sans">
               Distributed Systems Simulator
             </h1>
-            <Badge variant="cyan" size="sm" pulse>
-              Live v1.0
+            <Badge variant="blue" size="sm" pulse>
+              v1.0.0
             </Badge>
           </div>
           <p className="text-[11px] text-slate-400 font-sans">
@@ -57,14 +57,14 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       {/* Center: Playback / Speed Engine Controls */}
-      <div className="flex items-center gap-2 bg-slate-900/80 px-3 py-1.5 rounded-lg border border-slate-800">
+      <div className="flex items-center gap-2 bg-surface-elevated/80 px-2.5 py-1 rounded-lg border border-surface-border">
         <Button
           size="sm"
           variant={isRunning ? 'secondary' : 'primary'}
           icon={isRunning ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
           onClick={onToggleRunning}
         >
-          {isRunning ? 'PAUSE' : 'SIMULATE'}
+          {isRunning ? 'Pause' : 'Simulate'}
         </Button>
 
         <Button
@@ -74,10 +74,10 @@ export const Header: React.FC<HeaderProps> = ({
           onClick={onReset}
           title="Reset Simulation State"
         >
-          RESET
+          Reset
         </Button>
 
-        <div className="h-4 w-px bg-slate-800 mx-1" />
+        <div className="h-4 w-px bg-surface-border mx-1" />
 
         <div className="flex items-center gap-1">
           <span className="text-[11px] font-mono text-slate-500 mr-1">TICK:</span>
@@ -87,8 +87,8 @@ export const Header: React.FC<HeaderProps> = ({
               onClick={() => onSpeedChange(s)}
               className={`px-2 py-0.5 text-xs font-mono rounded transition-colors ${
                 speed === s
-                  ? 'bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/40'
-                  : 'text-slate-400 hover:text-slate-200'
+                  ? 'bg-blue-600 text-white font-medium shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-surface-card'
               }`}
             >
               {s}x
@@ -106,7 +106,7 @@ export const Header: React.FC<HeaderProps> = ({
           onClick={onOpenChaos}
           title="Toggle Chaos Engineering Monkey"
         >
-          {chaosActive ? 'CHAOS: ACTIVE' : 'CHAOS MONKEY'}
+          {chaosActive ? 'Chaos: Active' : 'Chaos Monkey'}
         </Button>
 
         <Button
@@ -116,17 +116,17 @@ export const Header: React.FC<HeaderProps> = ({
           onClick={onOpenDrills}
           title="System Design Scenario Challenges"
         >
-          DRILLS
+          Drills
         </Button>
 
         <Button
           size="sm"
           variant="ghost"
-          icon={<FileText className="w-3.5 h-3.5 text-cyan-400" />}
+          icon={<FileText className="w-3.5 h-3.5 text-blue-400" />}
           onClick={onExportReport}
           title="Export Incident Post-Mortem Report"
         >
-          POST-MORTEM
+          Post-Mortem
         </Button>
       </div>
     </header>

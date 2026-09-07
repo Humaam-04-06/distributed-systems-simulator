@@ -37,27 +37,27 @@ export const Slider: React.FC<SliderProps> = ({
   return (
     <div className={cn('space-y-1.5', className)}>
       <div className="flex items-center justify-between text-xs">
-        <span className="font-medium text-slate-300 font-mono flex items-center gap-1.5">
+        <span className="font-medium text-slate-300 font-sans flex items-center gap-1.5">
           {label}
           {isDanger && (
-            <span className="text-rose-400 font-bold animate-pulse text-[10px] px-1 py-0.2 bg-rose-950/60 border border-rose-800/80 rounded">
+            <span className="text-rose-400 font-mono font-semibold text-[10px] px-1.5 py-0.2 bg-rose-500/10 border border-rose-500/30 rounded">
               CRITICAL 💀
             </span>
           )}
           {isWarning && (
-            <span className="text-amber-400 font-bold text-[10px] px-1 py-0.2 bg-amber-950/60 border border-amber-800/80 rounded">
-              HIGH LOAD ⚠️
+            <span className="text-amber-400 font-mono font-semibold text-[10px] px-1.5 py-0.2 bg-amber-500/10 border border-amber-500/30 rounded">
+              HIGH LOAD
             </span>
           )}
         </span>
         <span
           className={cn(
-            'font-mono font-bold px-2 py-0.5 rounded text-xs transition-colors duration-200',
+            'font-mono font-semibold px-2 py-0.5 rounded text-xs transition-colors duration-150',
             isDanger
-              ? 'text-rose-400 bg-rose-950/50 border border-rose-800/60'
+              ? 'text-rose-300 bg-rose-500/10 border border-rose-500/20'
               : isWarning
-              ? 'text-amber-400 bg-amber-950/50 border border-amber-800/60'
-              : 'text-cyan-400 bg-cyan-950/50 border border-cyan-800/60'
+              ? 'text-amber-300 bg-amber-500/10 border border-amber-500/20'
+              : 'text-slate-100 bg-surface-elevated border border-surface-border'
           )}
         >
           {value.toLocaleString()} {unit}
@@ -72,29 +72,29 @@ export const Slider: React.FC<SliderProps> = ({
           step={step}
           value={value}
           onChange={(e) => onChange(Number(e.target.value))}
-          className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-400 focus:outline-none focus:ring-1 focus:ring-cyan-500/50"
+          className="w-full h-1.5 bg-surface-elevated rounded-lg appearance-none cursor-pointer accent-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/30"
           style={{
             background: `linear-gradient(to right, ${
               isDanger
-                ? '#ef4444'
+                ? '#f43f5e'
                 : isWarning
                 ? '#f59e0b'
-                : '#06b6d4'
+                : '#3b82f6'
             } 0%, ${
               isDanger
-                ? '#ef4444'
+                ? '#f43f5e'
                 : isWarning
                 ? '#f59e0b'
-                : '#06b6d4'
-            } ${percentage}%, #1e293b ${percentage}%, #1e293b 100%)`,
+                : '#3b82f6'
+            } ${percentage}%, #1e2436 ${percentage}%, #1e2436 100%)`,
           }}
         />
       </div>
 
       {helpText && (
-        <div className="text-[11px] text-slate-500 font-mono flex justify-between">
+        <div className="text-[11px] text-slate-500 font-sans flex justify-between">
           <span>{helpText}</span>
-          <span>
+          <span className="font-mono">
             {min} - {max} {unit}
           </span>
         </div>
