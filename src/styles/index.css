@@ -1,0 +1,110 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg-primary: #080c14;
+    --bg-surface: #0f172a;
+    --bg-surface-alt: #162032;
+    --border-subtle: #1e293b;
+    --border-accent: #334155;
+    --glow-cyan: rgba(6, 182, 212, 0.4);
+    --glow-emerald: rgba(16, 185, 129, 0.4);
+    --glow-crimson: rgba(239, 68, 68, 0.4);
+    --glow-amber: rgba(245, 158, 11, 0.4);
+    --glow-violet: rgba(139, 92, 246, 0.4);
+  }
+
+  body {
+    background-color: var(--bg-primary);
+    color: #f1f5f9;
+    font-family: 'Inter', system-ui, sans-serif;
+    overflow-x: hidden;
+  }
+}
+
+/* Custom Cyber Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #080c14;
+}
+::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #06b6d4;
+}
+
+/* Cyber Grid Background Utility */
+.cyber-grid {
+  background-image: 
+    linear-gradient(to right, rgba(30, 41, 59, 0.3) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(30, 41, 59, 0.3) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+.cyber-grid-dense {
+  background-image: 
+    linear-gradient(to right, rgba(30, 41, 59, 0.4) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(30, 41, 59, 0.4) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+
+/* Glassmorphism Cards */
+.glass-panel {
+  background: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(51, 65, 85, 0.6);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+}
+
+.glass-panel-elevated {
+  background: rgba(22, 32, 50, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(71, 85, 105, 0.6);
+  box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.5);
+}
+
+/* Live Packet Glow Filters */
+.packet-glow-cyan {
+  filter: drop-shadow(0 0 6px rgba(6, 182, 212, 0.9));
+}
+.packet-glow-emerald {
+  filter: drop-shadow(0 0 6px rgba(16, 185, 129, 0.9));
+}
+.packet-glow-amber {
+  filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.9));
+}
+.packet-glow-crimson {
+  filter: drop-shadow(0 0 6px rgba(239, 68, 68, 0.9));
+}
+.packet-glow-violet {
+  filter: drop-shadow(0 0 6px rgba(139, 92, 246, 0.9));
+}
+
+/* Radar Sweep Keyframe for Scanning Nodes */
+@keyframes radarSweep {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.radar-sweep {
+  animation: radarSweep 4s linear infinite;
+}
+
+/* Animated Shimmer Bar */
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.animate-shimmer {
+  animation: shimmer 2s infinite;
+}
