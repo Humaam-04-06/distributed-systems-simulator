@@ -4,7 +4,6 @@ import {
   Play,
   Pause,
   RotateCcw,
-  Zap,
   Target,
   FileText,
   Radio,
