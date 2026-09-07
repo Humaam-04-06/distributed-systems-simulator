@@ -21,12 +21,14 @@ import {
   Radio,
   CheckCircle2,
   Disc3,
+  Anchor,
 } from 'lucide-react';
 import { LoadBalancingAlgorithm } from './engine/types';
 import { ServerClusterGrid } from './components/nodes/ServerClusterGrid';
 import { DatabaseClusterView } from './components/database/DatabaseClusterView';
 import { CacheClusterView } from './components/cache/CacheClusterView';
 import { CascadingFailurePanel } from './components/resilience/CascadingFailurePanel';
+import { BulkheadClusterView } from './components/bulkhead/BulkheadClusterView';
 import { CircuitBreakerModal } from './components/modals/CircuitBreakerModal';
 
 export const App: React.FC = () => {
@@ -94,13 +96,21 @@ export const App: React.FC = () => {
     setFallbackStrategy,
     triggerCascadingFailure,
     resetResilience,
+    bulkheadPoolMetrics,
+    connPoolMetrics,
+    tenantQuotas,
+    isNoisyNeighborActive,
+    setBulkheadPoolCapacity,
+    toggleTenantQuarantine,
+    triggerNoisyNeighborSurge,
+    resetBulkheads,
   } = useSimulation();
 
   const [chaosActive, setChaosActive] = useState<boolean>(false);
   const [isHashRingOpen, setIsHashRingOpen] = useState<boolean>(false);
   const [isCircuitModalOpen, setIsCircuitModalOpen] = useState<boolean>(false);
   const [centerTab, setCenterTab] = useState<
-    'topology' | 'cluster' | 'database' | 'cache' | 'resilience'
+    'topology' | 'cluster' | 'database' | 'cache' | 'resilience' | 'bulkhead'
   >('topology');
 
   const activeServers = serverNodes.filter((s) => s.health !== 'crashed').length;
@@ -415,6 +425,26 @@ export const App: React.FC = () => {
                   {cbMetrics.state}
                 </span>
               </button>
+              <button
+                onClick={() => setCenterTab('bulkhead')}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  centerTab === 'bulkhead'
+                    ? 'bg-[#415a77] text-[#e0e1dd] shadow font-semibold'
+                    : 'text-[#778da9] hover:text-[#e0e1dd]'
+                }`}
+              >
+                <Anchor className="w-3.5 h-3.5 text-cyan-300" />
+                Bulkhead Compartments
+                {isNoisyNeighborActive ? (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-rose-500 text-white font-mono font-bold animate-pulse">
+                    SURGE
+                  </span>
+                ) : (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#0d1b2a] text-cyan-300 font-mono font-semibold">
+                    3 POOLS
+                  </span>
+                )}
+              </button>
             </div>
           </div>
 
@@ -473,6 +503,17 @@ export const App: React.FC = () => {
               onTriggerCascadingFailure={triggerCascadingFailure}
               onResetResilience={resetResilience}
               onOpenCircuitModal={() => setIsCircuitModalOpen(true)}
+            />
+          ) : centerTab === 'bulkhead' ? (
+            <BulkheadClusterView
+              poolMetrics={bulkheadPoolMetrics}
+              connPoolMetrics={connPoolMetrics}
+              tenantQuotas={tenantQuotas}
+              isNoisyNeighborActive={isNoisyNeighborActive}
+              onSetPoolCapacity={setBulkheadPoolCapacity}
+              onToggleTenantQuarantine={toggleTenantQuarantine}
+              onTriggerNoisyNeighborSurge={triggerNoisyNeighborSurge}
+              onResetBulkheads={resetBulkheads}
             />
           ) : (
             <Card
