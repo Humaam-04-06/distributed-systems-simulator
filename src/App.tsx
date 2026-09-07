@@ -7,6 +7,8 @@ import { Button } from './components/ui/Button';
 import { Badge } from './components/ui/Badge';
 import { Slider } from './components/ui/Slider';
 import { Switch } from './components/ui/Switch';
+import { ConsistentHashRingModal } from './components/modals/ConsistentHashRingModal';
+import { showInfoAlert, showWarningAlert } from './utils/alerts';
 import {
   Server,
   Database,
@@ -18,6 +20,7 @@ import {
   Network,
   Radio,
   CheckCircle2,
+  Disc3,
 } from 'lucide-react';
 import { LoadBalancingAlgorithm } from './engine/types';
 
@@ -47,6 +50,7 @@ export const App: React.FC = () => {
 
   const [chaosActive, setChaosActive] = useState<boolean>(false);
   const [circuitBreaker, setCircuitBreaker] = useState<boolean>(true);
+  const [isHashRingOpen, setIsHashRingOpen] = useState<boolean>(false);
 
   const activeServers = serverNodes.filter((s) => s.health !== 'crashed').length;
   const totalServers = serverNodes.length;
@@ -68,6 +72,31 @@ export const App: React.FC = () => {
       ? ((cacheNode.hitCount / totalCacheLookups) * 100).toFixed(1)
       : '89.4';
 
+  const handleOpenDrills = () => {
+    showInfoAlert(
+      'System Design Drills',
+      'System Design Challenge Drills will be loaded in Phase 10 with interactive failure scenarios!'
+    );
+  };
+
+  const handleOpenPostMortem = () => {
+    showInfoAlert(
+      'Post-Mortem Generator',
+      'The FAANG-Grade Post-Mortem Incident Report Generator will be unlocked in Phase 10!'
+    );
+  };
+
+  const handleToggleChaos = () => {
+    const next = !chaosActive;
+    setChaosActive(next);
+    if (next) {
+      showWarningAlert(
+        'Chaos Monkey Activated',
+        'Automated chaos engine is now actively inspecting and injecting randomized faults!'
+      );
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#0d1b2a] text-[#e0e1dd] flex flex-col font-sans modern-grid selection:bg-[#415a77] selection:text-[#e0e1dd]">
       {/* Top Header */}
@@ -77,9 +106,9 @@ export const App: React.FC = () => {
         onReset={reset}
         speed={speed}
         onSpeedChange={setSpeed}
-        onOpenDrills={() => alert('System Design Drills Modal will be loaded in Phase 10!')}
-        onOpenChaos={() => setChaosActive(!chaosActive)}
-        onExportReport={() => alert('Post-Mortem Export will be loaded in Phase 10!')}
+        onOpenDrills={handleOpenDrills}
+        onOpenChaos={handleToggleChaos}
+        onExportReport={handleOpenPostMortem}
         chaosActive={chaosActive}
       />
 
@@ -138,9 +167,20 @@ export const App: React.FC = () => {
 
               {/* Load Balancing Algorithm Selector */}
               <div className="pt-3 border-t border-[#415a77]/60">
-                <label className="text-xs font-sans font-medium text-[#e0e1dd] block mb-2">
-                  Load Balancing Algorithm
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-sans font-medium text-[#e0e1dd]">
+                    Load Balancing Algorithm
+                  </label>
+                  {lbNode.algorithm === 'consistent-hash' && (
+                    <button
+                      onClick={() => setIsHashRingOpen(true)}
+                      className="text-[11px] font-sans text-[#778da9] hover:text-[#e0e1dd] underline flex items-center gap-1"
+                    >
+                      <Disc3 className="w-3 h-3 animate-spin" /> View 360° Ring
+                    </button>
+                  )}
+                </div>
+
                 <div className="grid grid-cols-3 gap-1.5 p-1 bg-[#223049] rounded-lg border border-[#415a77]">
                   {[
                     { id: 'round-robin', label: 'Round Robin' },
@@ -378,9 +418,19 @@ export const App: React.FC = () => {
               {/* Node Layer 2: Load Balancer */}
               <div className="relative z-10 w-full max-w-sm">
                 <div className="p-3.5 rounded-xl bg-[#223049] border border-[#415a77] shadow-card text-center">
-                  <div className="flex items-center justify-center gap-2 text-xs font-semibold text-[#e0e1dd] uppercase tracking-wide">
-                    <Layers className="w-4 h-4 text-[#778da9]" />
-                    {lbNode.name}
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-[#e0e1dd] uppercase tracking-wide">
+                      <Layers className="w-4 h-4 text-[#778da9]" />
+                      {lbNode.name}
+                    </div>
+                    {lbNode.algorithm === 'consistent-hash' && (
+                      <button
+                        onClick={() => setIsHashRingOpen(true)}
+                        className="text-[10px] text-[#778da9] hover:text-[#e0e1dd] flex items-center gap-1 font-mono"
+                      >
+                        <Disc3 className="w-3 h-3" /> 360° Ring
+                      </button>
+                    )}
                   </div>
                   <div className="text-[11px] text-[#778da9] font-sans mt-1 flex items-center justify-center gap-3">
                     <span>
@@ -391,7 +441,7 @@ export const App: React.FC = () => {
                     </span>
                     <span>•</span>
                     <span className="text-emerald-300 flex items-center gap-1">
-                      <CheckCircle2 className="w-3 h-3" /> Active Probing
+                      <CheckCircle2 className="w-3 h-3" /> Active Probes
                     </span>
                   </div>
                 </div>
@@ -697,6 +747,13 @@ export const App: React.FC = () => {
         errorRate={metrics.errorRatePercentage}
         avgLatency={metrics.latencies.avg || config.networkLatencyMs}
         uptimeSeconds={uptimeSeconds}
+      />
+
+      {/* 360 Consistent Hash Ring Modal */}
+      <ConsistentHashRingModal
+        isOpen={isHashRingOpen}
+        onClose={() => setIsHashRingOpen(false)}
+        activeServers={serverNodes.filter((s) => s.health !== 'crashed').map((s) => s.id)}
       />
     </div>
   );
