@@ -20,6 +20,13 @@ import { CacheEvictionEngine, CacheEntry, CacheMetrics, EvictionPolicy } from '.
 import { CacheStampedeSimulator, StampedeEvent } from './CacheStampedeSimulator';
 import { CacheMitigationManager, StampedeMitigationStrategy } from './CacheMitigationManager';
 import {
+  CircuitBreakerManager,
+  CircuitBreakerMetrics,
+  CircuitBreakerConfig,
+} from './CircuitBreakerManager';
+import { RetryEngine, RetryMetrics, BackoffStrategy } from './RetryEngine';
+import { FallbackManager, FallbackMetrics, FallbackStrategy } from './FallbackManager';
+import {
   IncidentEvent,
   IncidentSeverity,
   Packet,
@@ -51,6 +58,9 @@ export class SimulationEngine {
   public cacheEngine: CacheEvictionEngine;
   public stampedeSim: CacheStampedeSimulator;
   public cacheMitigation: CacheMitigationManager;
+  public circuitBreaker: CircuitBreakerManager;
+  public retryEngine: RetryEngine;
+  public fallbackManager: FallbackManager;
 
   // Cluster Nodes
   public lbNode: LoadBalancerNodeState;
@@ -108,6 +118,9 @@ export class SimulationEngine {
     this.cacheEngine = new CacheEvictionEngine(24, 'lru');
     this.stampedeSim = new CacheStampedeSimulator();
     this.cacheMitigation = new CacheMitigationManager();
+    this.circuitBreaker = new CircuitBreakerManager();
+    this.retryEngine = new RetryEngine();
+    this.fallbackManager = new FallbackManager();
 
     // 1. Initialize Load Balancer Node State
     this.lbNode = {
@@ -640,6 +653,26 @@ export class SimulationEngine {
         continue;
       }
 
+      // Circuit Breaker Failsafe Check
+      if (this.config.circuitBreakerEnabled) {
+        const cbCheck = this.circuitBreaker.canExecute(targetServer.id, now);
+        if (!cbCheck.allowed) {
+          const fallback = this.fallbackManager.executeFallback(
+            packet.type === 'write' ? 'write' : 'read',
+            'user:profile'
+          );
+          if (fallback.served) {
+            packet.status = 'success_200';
+            packet.totalLatencyMs = fallback.latencyMs;
+          } else {
+            packet.status = 'circuit_broken_503';
+            packet.totalLatencyMs = 2; // Fast-fail in 2ms!
+          }
+          this.metrics.recordCompleted(packet);
+          continue;
+        }
+      }
+
       packet.targetServerId = targetServer.id;
       const queue = this.serverQueues.get(targetServer.id);
 
@@ -813,6 +846,7 @@ export class SimulationEngine {
             // Read query that missed cache
             const readRes = this.dbReplication.executeRead(true);
             if (!readRes.success) {
+              this.circuitBreaker.recordFailure(server.id, now);
               completedPacket.status = 'error_500';
               completedPacket.totalLatencyMs = extraLatency + 200;
               this.metrics.recordCompleted(completedPacket);
@@ -822,6 +856,7 @@ export class SimulationEngine {
           }
         }
 
+        this.circuitBreaker.recordSuccess(server.id, now);
         completedPacket.status = 'success_200';
         completedPacket.totalLatencyMs =
           extraLatency + (Math.random() * this.config.jitterMs - this.config.jitterMs / 2);
@@ -835,6 +870,8 @@ export class SimulationEngine {
 
       server.queueDepth = qm.currentDepth;
       server.activeConnections = queue.getActiveProcessingCount();
+      server.circuitBreakerState = this.circuitBreaker.getBreaker(server.id).getState();
+      server.failureCountConsecutive = this.circuitBreaker.getMetrics(server.id, now).consecutiveFailures;
 
       const res = this.resourceManager.computeResources(
         server.queueDepth,
@@ -891,10 +928,109 @@ export class SimulationEngine {
       Math.round((cMetrics.memoryUsedBytes / cMetrics.maxMemoryBytes) * 100)
     );
 
+    // Tick Circuit Breakers
+    this.circuitBreaker.tick(now);
+
     // 5. Update Metrics
     this.metrics.tick(now, aliveServers.length);
 
     // 6. Notify UI subscribers
+    this.notify();
+  }
+
+  public getCircuitBreakerMetrics(serverId: string = 'server-1'): CircuitBreakerMetrics {
+    return this.circuitBreaker.getMetrics(serverId);
+  }
+
+  public getCircuitBreakerConfig(): CircuitBreakerConfig {
+    return this.circuitBreaker.getDefaultConfig();
+  }
+
+  public updateCircuitBreakerConfig(cfg: Partial<CircuitBreakerConfig>): void {
+    this.circuitBreaker.updateDefaultConfig(cfg);
+    this.notify();
+  }
+
+  public toggleCircuitBreaker(): void {
+    this.config.circuitBreakerEnabled = !this.config.circuitBreakerEnabled;
+    this.addIncident(
+      'info',
+      'lb-1',
+      `Circuit Breaker protection ${
+        this.config.circuitBreakerEnabled ? 'ARMED' : 'BYPASSED'
+      }.`
+    );
+    this.notify();
+  }
+
+  public forceTripCircuit(serverId: string = 'server-1'): void {
+    this.circuitBreaker.trip(serverId);
+    this.addIncident(
+      'critical',
+      serverId,
+      `Operator manually tripped Circuit Breaker for ${serverId} to OPEN.`
+    );
+    this.notify();
+  }
+
+  public forceResetCircuit(serverId: string = 'server-1'): void {
+    this.circuitBreaker.reset(serverId);
+    this.addIncident(
+      'info',
+      serverId,
+      `Operator reset Circuit Breaker for ${serverId} to CLOSED.`
+    );
+    this.notify();
+  }
+
+  public getRetryMetrics(): RetryMetrics {
+    return this.retryEngine.getMetrics();
+  }
+
+  public setRetryStrategy(strategy: BackoffStrategy): void {
+    this.retryEngine.setStrategy(strategy);
+    this.addIncident(
+      'info',
+      'lb-1',
+      `Retry backoff strategy changed to ${strategy.replace('_', ' ').toUpperCase()}.`
+    );
+    this.notify();
+  }
+
+  public getFallbackMetrics(): FallbackMetrics {
+    return this.fallbackManager.getMetrics();
+  }
+
+  public setFallbackStrategy(strategy: FallbackStrategy): void {
+    this.fallbackManager.setStrategy(strategy);
+    this.addIncident(
+      'info',
+      'lb-1',
+      `Graceful fallback strategy changed to ${strategy.replace('_', ' ').toUpperCase()}.`
+    );
+    this.notify();
+  }
+
+  public triggerCascadingFailure(): void {
+    if (this.serverNodes.length > 0) {
+      this.setServerDetailedMode(this.serverNodes[0].id, 'crashed');
+    }
+    if (this.serverNodes.length > 1) {
+      this.setServerDetailedMode(this.serverNodes[1].id, 'degraded');
+    }
+    this.addIncident(
+      'critical',
+      'lb-1',
+      'Cascading Failure Surge Injected! Testing blast radius containment.'
+    );
+    this.notify();
+  }
+
+  public resetResilience(): void {
+    this.circuitBreaker.resetAll();
+    this.retryEngine.reset();
+    this.fallbackManager.reset();
+    this.addIncident('info', 'lb-1', 'Resilience metrics and circuit states reset.');
     this.notify();
   }
 
@@ -907,6 +1043,7 @@ export class SimulationEngine {
     this.trafficGen.reset();
     this.metrics.reset();
     this.rateLimiter.reset();
+    this.resetResilience();
     this.serverNodes.forEach((s) => {
       s.health = 'healthy';
       s.cpuLoad = 10;

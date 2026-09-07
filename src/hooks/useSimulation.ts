@@ -12,6 +12,12 @@ import { CacheEntry, CacheMetrics, EvictionPolicy } from '../engine/CacheEvictio
 import { StampedeEvent } from '../engine/CacheStampedeSimulator';
 import { StampedeMitigationStrategy } from '../engine/CacheMitigationManager';
 import {
+  CircuitBreakerMetrics,
+  CircuitBreakerConfig,
+} from '../engine/CircuitBreakerManager';
+import { RetryMetrics, BackoffStrategy } from '../engine/RetryEngine';
+import { FallbackMetrics, FallbackStrategy } from '../engine/FallbackManager';
+import {
   IncidentEvent,
   ServerNodeState,
   DatabaseNodeState,
@@ -65,6 +71,16 @@ export function useSimulation() {
   const [activeStampede, setActiveStampede] = useState<StampedeEvent | null>(
     engine.stampedeSim.getActiveStampede()
   );
+  const [cbMetrics, setCbMetrics] = useState<CircuitBreakerMetrics>(
+    engine.getCircuitBreakerMetrics()
+  );
+  const [cbConfig, setCbConfig] = useState<CircuitBreakerConfig>(
+    engine.getCircuitBreakerConfig()
+  );
+  const [retryMetrics, setRetryMetrics] = useState<RetryMetrics>(engine.getRetryMetrics());
+  const [fallbackMetrics, setFallbackMetrics] = useState<FallbackMetrics>(
+    engine.getFallbackMetrics()
+  );
 
   // Subscribe to engine tick notifications
   useEffect(() => {
@@ -87,6 +103,10 @@ export function useSimulation() {
       setCacheMitigationStrategyState(engine.getCacheMitigationStrategy());
       setIsStampedeActive(engine.stampedeSim.getActiveStampede() !== null);
       setActiveStampede(engine.stampedeSim.getActiveStampede());
+      setCbMetrics(engine.getCircuitBreakerMetrics());
+      setCbConfig(engine.getCircuitBreakerConfig());
+      setRetryMetrics(engine.getRetryMetrics());
+      setFallbackMetrics(engine.getFallbackMetrics());
     });
 
     // Start simulation clock
@@ -297,6 +317,53 @@ export function useSimulation() {
     engine.clearCache();
   }, [engine]);
 
+  const toggleCircuitBreaker = useCallback(() => {
+    engine.toggleCircuitBreaker();
+  }, [engine]);
+
+  const updateCircuitBreakerConfig = useCallback(
+    (cfg: Partial<CircuitBreakerConfig>) => {
+      engine.updateCircuitBreakerConfig(cfg);
+    },
+    [engine]
+  );
+
+  const forceTripCircuit = useCallback(
+    (serverId?: string) => {
+      engine.forceTripCircuit(serverId);
+    },
+    [engine]
+  );
+
+  const forceResetCircuit = useCallback(
+    (serverId?: string) => {
+      engine.forceResetCircuit(serverId);
+    },
+    [engine]
+  );
+
+  const setRetryStrategy = useCallback(
+    (strategy: BackoffStrategy) => {
+      engine.setRetryStrategy(strategy);
+    },
+    [engine]
+  );
+
+  const setFallbackStrategy = useCallback(
+    (strategy: FallbackStrategy) => {
+      engine.setFallbackStrategy(strategy);
+    },
+    [engine]
+  );
+
+  const triggerCascadingFailure = useCallback(() => {
+    engine.triggerCascadingFailure();
+  }, [engine]);
+
+  const resetResilience = useCallback(() => {
+    engine.resetResilience();
+  }, [engine]);
+
   return {
     isRunning,
     speed,
@@ -319,6 +386,10 @@ export function useSimulation() {
     cacheMitigationStrategy,
     isStampedeActive,
     activeStampede,
+    cbMetrics,
+    cbConfig,
+    retryMetrics,
+    fallbackMetrics,
     toggleRunning,
     setSpeed,
     reset,
@@ -349,5 +420,13 @@ export function useSimulation() {
     triggerCacheStampede,
     invalidateCacheKey,
     clearCache,
+    toggleCircuitBreaker,
+    updateCircuitBreakerConfig,
+    forceTripCircuit,
+    forceResetCircuit,
+    setRetryStrategy,
+    setFallbackStrategy,
+    triggerCascadingFailure,
+    resetResilience,
   };
 }

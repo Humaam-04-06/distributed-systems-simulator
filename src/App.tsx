@@ -26,6 +26,8 @@ import { LoadBalancingAlgorithm } from './engine/types';
 import { ServerClusterGrid } from './components/nodes/ServerClusterGrid';
 import { DatabaseClusterView } from './components/database/DatabaseClusterView';
 import { CacheClusterView } from './components/cache/CacheClusterView';
+import { CascadingFailurePanel } from './components/resilience/CascadingFailurePanel';
+import { CircuitBreakerModal } from './components/modals/CircuitBreakerModal';
 
 export const App: React.FC = () => {
   const {
@@ -80,12 +82,26 @@ export const App: React.FC = () => {
     triggerCacheStampede,
     invalidateCacheKey,
     clearCache,
+    cbMetrics,
+    cbConfig,
+    retryMetrics,
+    fallbackMetrics,
+    toggleCircuitBreaker,
+    updateCircuitBreakerConfig,
+    forceTripCircuit,
+    forceResetCircuit,
+    setRetryStrategy,
+    setFallbackStrategy,
+    triggerCascadingFailure,
+    resetResilience,
   } = useSimulation();
 
   const [chaosActive, setChaosActive] = useState<boolean>(false);
-  const [circuitBreaker, setCircuitBreaker] = useState<boolean>(true);
   const [isHashRingOpen, setIsHashRingOpen] = useState<boolean>(false);
-  const [centerTab, setCenterTab] = useState<'topology' | 'cluster' | 'database' | 'cache'>('topology');
+  const [isCircuitModalOpen, setIsCircuitModalOpen] = useState<boolean>(false);
+  const [centerTab, setCenterTab] = useState<
+    'topology' | 'cluster' | 'database' | 'cache' | 'resilience'
+  >('topology');
 
   const activeServers = serverNodes.filter((s) => s.health !== 'crashed').length;
   const totalServers = serverNodes.length;
@@ -250,8 +266,8 @@ export const App: React.FC = () => {
                 <Switch
                   label="Circuit Breaker Pattern"
                   description="Fast-fail 503 on failing instances"
-                  checked={circuitBreaker}
-                  onChange={setCircuitBreaker}
+                  checked={config.circuitBreakerEnabled}
+                  onChange={toggleCircuitBreaker}
                   variant="amber"
                 />
               </div>
@@ -377,6 +393,28 @@ export const App: React.FC = () => {
                   </span>
                 )}
               </button>
+              <button
+                onClick={() => setCenterTab('resilience')}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  centerTab === 'resilience'
+                    ? 'bg-[#415a77] text-[#e0e1dd] shadow font-semibold'
+                    : 'text-[#778da9] hover:text-[#e0e1dd]'
+                }`}
+              >
+                <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
+                Resilience & Cascading Defense
+                <span
+                  className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono font-bold uppercase ${
+                    cbMetrics.state === 'closed'
+                      ? 'bg-emerald-500/20 text-emerald-300'
+                      : cbMetrics.state === 'open'
+                      ? 'bg-rose-500/20 text-rose-300 animate-pulse'
+                      : 'bg-amber-500/20 text-amber-300'
+                  }`}
+                >
+                  {cbMetrics.state}
+                </span>
+              </button>
             </div>
           </div>
 
@@ -422,6 +460,19 @@ export const App: React.FC = () => {
               onTriggerStampede={triggerCacheStampede}
               onInvalidateKey={invalidateCacheKey}
               onClearCache={clearCache}
+            />
+          ) : centerTab === 'resilience' ? (
+            <CascadingFailurePanel
+              cbMetrics={cbMetrics}
+              retryMetrics={retryMetrics}
+              fallbackMetrics={fallbackMetrics}
+              circuitBreakerEnabled={config.circuitBreakerEnabled}
+              onToggleCircuitBreaker={toggleCircuitBreaker}
+              onSetRetryStrategy={setRetryStrategy}
+              onSetFallbackStrategy={setFallbackStrategy}
+              onTriggerCascadingFailure={triggerCascadingFailure}
+              onResetResilience={resetResilience}
+              onOpenCircuitModal={() => setIsCircuitModalOpen(true)}
             />
           ) : (
             <Card
@@ -905,6 +956,19 @@ export const App: React.FC = () => {
         isOpen={isHashRingOpen}
         onClose={() => setIsHashRingOpen(false)}
         activeServers={serverNodes.filter((s) => s.health !== 'crashed').map((s) => s.id)}
+      />
+
+      {/* Hystrix Circuit Breaker Modal */}
+      <CircuitBreakerModal
+        isOpen={isCircuitModalOpen}
+        onClose={() => setIsCircuitModalOpen(false)}
+        metrics={cbMetrics}
+        config={cbConfig}
+        enabled={config.circuitBreakerEnabled}
+        onToggleEnabled={toggleCircuitBreaker}
+        onUpdateConfig={updateCircuitBreakerConfig}
+        onForceTrip={() => forceTripCircuit('server-1')}
+        onForceReset={() => forceResetCircuit('server-1')}
       />
     </div>
   );
