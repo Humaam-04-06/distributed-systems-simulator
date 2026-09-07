@@ -27,6 +27,20 @@ import {
 import { RetryEngine, RetryMetrics, BackoffStrategy } from './RetryEngine';
 import { FallbackManager, FallbackMetrics, FallbackStrategy } from './FallbackManager';
 import {
+  ThreadPoolBulkhead,
+  BulkheadPoolMetrics,
+  BulkheadDomain,
+} from './ThreadPoolBulkhead';
+import {
+  ConnectionPoolBulkhead,
+  ConnectionPoolMetrics,
+} from './ConnectionPoolBulkhead';
+import {
+  TenantBulkheadQuarantine,
+  TenantQuota,
+  TenantTier,
+} from './TenantBulkheadQuarantine';
+import {
   IncidentEvent,
   IncidentSeverity,
   Packet,
@@ -61,6 +75,9 @@ export class SimulationEngine {
   public circuitBreaker: CircuitBreakerManager;
   public retryEngine: RetryEngine;
   public fallbackManager: FallbackManager;
+  public threadBulkhead: ThreadPoolBulkhead;
+  public connBulkhead: ConnectionPoolBulkhead;
+  public tenantBulkhead: TenantBulkheadQuarantine;
 
   // Cluster Nodes
   public lbNode: LoadBalancerNodeState;
@@ -121,6 +138,9 @@ export class SimulationEngine {
     this.circuitBreaker = new CircuitBreakerManager();
     this.retryEngine = new RetryEngine();
     this.fallbackManager = new FallbackManager();
+    this.threadBulkhead = new ThreadPoolBulkhead();
+    this.connBulkhead = new ConnectionPoolBulkhead();
+    this.tenantBulkhead = new TenantBulkheadQuarantine();
 
     // 1. Initialize Load Balancer Node State
     this.lbNode = {
@@ -653,6 +673,55 @@ export class SimulationEngine {
         continue;
       }
 
+      // 3.1 Classify request domain & tenant tier
+      let domain: BulkheadDomain = 'catalog';
+      let tenantTier: TenantTier = 'pro';
+
+      if (this.tenantBulkhead.isNoisyNeighborSurgeActive()) {
+        const rand = Math.random();
+        if (rand < 0.75) {
+          domain = 'analytics';
+          tenantTier = 'free';
+        } else if (rand < 0.90) {
+          domain = 'checkout';
+          tenantTier = 'enterprise';
+        } else {
+          domain = 'catalog';
+          tenantTier = 'pro';
+        }
+      } else {
+        const rand = Math.random();
+        if (rand < 0.35) {
+          domain = 'checkout';
+          tenantTier = 'enterprise';
+        } else if (rand < 0.80) {
+          domain = 'catalog';
+          tenantTier = 'pro';
+        } else {
+          domain = 'analytics';
+          tenantTier = 'free';
+        }
+      }
+
+      // 3.2 Multi-tenant quota quarantine check
+      const tenantCheck = this.tenantBulkhead.tryAcquire(tenantTier);
+      if (!tenantCheck.accepted) {
+        packet.status = 'rate_limited_429';
+        packet.totalLatencyMs = 4;
+        this.metrics.recordCompleted(packet);
+        continue;
+      }
+
+      // 3.3 Domain thread pool bulkhead compartment check
+      const bulkheadCheck = this.threadBulkhead.tryAcquire(domain);
+      if (!bulkheadCheck.accepted) {
+        this.tenantBulkhead.release(tenantTier);
+        packet.status = 'circuit_broken_503';
+        packet.totalLatencyMs = 4;
+        this.metrics.recordCompleted(packet);
+        continue;
+      }
+
       // Circuit Breaker Failsafe Check
       if (this.config.circuitBreakerEnabled) {
         const cbCheck = this.circuitBreaker.canExecute(targetServer.id, now);
@@ -928,8 +997,11 @@ export class SimulationEngine {
       Math.round((cMetrics.memoryUsedBytes / cMetrics.maxMemoryBytes) * 100)
     );
 
-    // Tick Circuit Breakers
+    // Tick Circuit Breakers & Bulkhead partitions
     this.circuitBreaker.tick(now);
+    this.threadBulkhead.step(deltaMs);
+    this.connBulkhead.step(deltaMs, now);
+    this.tenantBulkhead.step(deltaMs, now);
 
     // 5. Update Metrics
     this.metrics.tick(now, aliveServers.length);
@@ -1034,6 +1106,66 @@ export class SimulationEngine {
     this.notify();
   }
 
+  public getBulkheadPoolMetrics(): BulkheadPoolMetrics[] {
+    return this.threadBulkhead.getAllPoolMetrics();
+  }
+
+  public getConnectionPoolMetrics(): ConnectionPoolMetrics {
+    return this.connBulkhead.getMetrics();
+  }
+
+  public getTenantQuotas(): TenantQuota[] {
+    return this.tenantBulkhead.getQuotas();
+  }
+
+  public isNoisyNeighborSurgeActive(): boolean {
+    return this.tenantBulkhead.isNoisyNeighborSurgeActive();
+  }
+
+  public setBulkheadPoolCapacity(
+    domain: BulkheadDomain,
+    maxConcurrency: number,
+    maxQueue: number
+  ): void {
+    this.threadBulkhead.setPoolCapacity(domain, maxConcurrency, maxQueue);
+    this.addIncident(
+      'info',
+      'lb-1',
+      `Bulkhead compartment [${domain.toUpperCase()}] capacity set to ${maxConcurrency} threads, ${maxQueue} queue.`
+    );
+    this.notify();
+  }
+
+  public toggleTenantQuarantine(tier: TenantTier): void {
+    const isQuarantined = this.tenantBulkhead.toggleQuarantine(tier);
+    this.addIncident(
+      isQuarantined ? 'warn' : 'info',
+      'lb-1',
+      `Tenant [${tier.toUpperCase()}] ${
+        isQuarantined ? 'placed in QUARANTINE sandbox' : 'quarantine LIFTED'
+      }.`
+    );
+    this.notify();
+  }
+
+  public triggerNoisyNeighborSurge(): void {
+    this.tenantBulkhead.triggerNoisyNeighborSurge(8000, performance.now());
+    this.addIncident(
+      'critical',
+      'lb-1',
+      'Noisy Neighbor Surge! Free-tier tenant flooded; verifying compartment isolation.'
+    );
+    this.notify();
+  }
+
+  public resetBulkheads(): void {
+    this.threadBulkhead.reset();
+    this.connBulkhead.reset();
+    this.tenantBulkhead.reset();
+    this.addIncident('info', 'lb-1', 'Bulkhead compartments and quotas reset.');
+    this.notify();
+  }
+
   public getMetricsSnapshot(): SimulationMetrics {
     return this.metrics.getSnapshot();
   }
@@ -1044,6 +1176,7 @@ export class SimulationEngine {
     this.metrics.reset();
     this.rateLimiter.reset();
     this.resetResilience();
+    this.resetBulkheads();
     this.serverNodes.forEach((s) => {
       s.health = 'healthy';
       s.cpuLoad = 10;

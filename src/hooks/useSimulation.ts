@@ -18,6 +18,12 @@ import {
 import { RetryMetrics, BackoffStrategy } from '../engine/RetryEngine';
 import { FallbackMetrics, FallbackStrategy } from '../engine/FallbackManager';
 import {
+  BulkheadPoolMetrics,
+  BulkheadDomain,
+} from '../engine/ThreadPoolBulkhead';
+import { ConnectionPoolMetrics } from '../engine/ConnectionPoolBulkhead';
+import { TenantQuota, TenantTier } from '../engine/TenantBulkheadQuarantine';
+import {
   IncidentEvent,
   ServerNodeState,
   DatabaseNodeState,
@@ -81,6 +87,18 @@ export function useSimulation() {
   const [fallbackMetrics, setFallbackMetrics] = useState<FallbackMetrics>(
     engine.getFallbackMetrics()
   );
+  const [bulkheadPoolMetrics, setBulkheadPoolMetrics] = useState<BulkheadPoolMetrics[]>(
+    engine.getBulkheadPoolMetrics()
+  );
+  const [connPoolMetrics, setConnPoolMetrics] = useState<ConnectionPoolMetrics>(
+    engine.getConnectionPoolMetrics()
+  );
+  const [tenantQuotas, setTenantQuotas] = useState<TenantQuota[]>(
+    engine.getTenantQuotas()
+  );
+  const [isNoisyNeighborActive, setIsNoisyNeighborActive] = useState<boolean>(
+    engine.isNoisyNeighborSurgeActive()
+  );
 
   // Subscribe to engine tick notifications
   useEffect(() => {
@@ -107,6 +125,10 @@ export function useSimulation() {
       setCbConfig(engine.getCircuitBreakerConfig());
       setRetryMetrics(engine.getRetryMetrics());
       setFallbackMetrics(engine.getFallbackMetrics());
+      setBulkheadPoolMetrics([...engine.getBulkheadPoolMetrics()]);
+      setConnPoolMetrics({ ...engine.getConnectionPoolMetrics() });
+      setTenantQuotas([...engine.getTenantQuotas()]);
+      setIsNoisyNeighborActive(engine.isNoisyNeighborSurgeActive());
     });
 
     // Start simulation clock
@@ -364,6 +386,28 @@ export function useSimulation() {
     engine.resetResilience();
   }, [engine]);
 
+  const setBulkheadPoolCapacity = useCallback(
+    (domain: BulkheadDomain, maxConcurrency: number, maxQueue: number) => {
+      engine.setBulkheadPoolCapacity(domain, maxConcurrency, maxQueue);
+    },
+    [engine]
+  );
+
+  const toggleTenantQuarantine = useCallback(
+    (tier: TenantTier) => {
+      engine.toggleTenantQuarantine(tier);
+    },
+    [engine]
+  );
+
+  const triggerNoisyNeighborSurge = useCallback(() => {
+    engine.triggerNoisyNeighborSurge();
+  }, [engine]);
+
+  const resetBulkheads = useCallback(() => {
+    engine.resetBulkheads();
+  }, [engine]);
+
   return {
     isRunning,
     speed,
@@ -390,6 +434,10 @@ export function useSimulation() {
     cbConfig,
     retryMetrics,
     fallbackMetrics,
+    bulkheadPoolMetrics,
+    connPoolMetrics,
+    tenantQuotas,
+    isNoisyNeighborActive,
     toggleRunning,
     setSpeed,
     reset,
@@ -428,5 +476,9 @@ export function useSimulation() {
     setFallbackStrategy,
     triggerCascadingFailure,
     resetResilience,
+    setBulkheadPoolCapacity,
+    toggleTenantQuarantine,
+    triggerNoisyNeighborSurge,
+    resetBulkheads,
   };
 }
