@@ -10,6 +10,9 @@ import { LoadBalancer } from './LoadBalancer';
 import { ConsistentHashRing } from './ConsistentHashRing';
 import { TokenBucketRateLimiter } from './RateLimiter';
 import { HealthChecker } from './HealthChecker';
+import { ServerResourceManager, ServerResources } from './ServerResourceManager';
+import { ServerStateMachine, DetailedServerMode } from './ServerStateMachine';
+import { WatchdogSupervisor } from './WatchdogSupervisor';
 import {
   IncidentEvent,
   IncidentSeverity,
@@ -33,6 +36,9 @@ export class SimulationEngine {
   public hashRing: ConsistentHashRing;
   public rateLimiter: TokenBucketRateLimiter;
   public healthChecker: HealthChecker;
+  public resourceManager: ServerResourceManager;
+  public stateMachine: ServerStateMachine;
+  public watchdog: WatchdogSupervisor;
 
   // Cluster Nodes
   public lbNode: LoadBalancerNodeState;
@@ -81,6 +87,9 @@ export class SimulationEngine {
       unhealthyThreshold: 3,
       healthyThreshold: 2,
     });
+    this.resourceManager = new ServerResourceManager();
+    this.stateMachine = new ServerStateMachine();
+    this.watchdog = new WatchdogSupervisor();
 
     // 1. Initialize Load Balancer Node State
     this.lbNode = {
@@ -131,6 +140,8 @@ export class SimulationEngine {
         })
       );
       this.healthChecker.registerNode(server.id, true);
+      this.stateMachine.register(server.id, 'healthy');
+      this.watchdog.register(server.id, true, 4000);
     }
 
     this.hashRing.setNodes(this.serverNodes.map((s) => s.id));
@@ -213,25 +224,137 @@ export class SimulationEngine {
     this.notify();
   }
 
+  public getServerResources(serverId: string): ServerResources {
+    const server = this.serverNodes.find((s) => s.id === serverId);
+    if (!server) {
+      return this.resourceManager.computeResources(0, 0, false);
+    }
+    const isDegraded = this.stateMachine.getMode(serverId) === 'degraded';
+    return this.resourceManager.computeResources(
+      server.queueDepth,
+      server.activeConnections,
+      isDegraded
+    );
+  }
+
+  public getServerMode(serverId: string): DetailedServerMode {
+    return this.stateMachine.getMode(serverId);
+  }
+
+  public setServerDetailedMode(serverId: string, mode: DetailedServerMode): void {
+    const server = this.serverNodes.find((s) => s.id === serverId);
+    if (!server) return;
+
+    this.stateMachine.setMode(serverId, mode);
+
+    if (mode === 'crashed' || mode === 'oom_crash') {
+      server.health = 'crashed';
+      server.activeConnections = 0;
+      server.queueDepth = 0;
+      this.hashRing.removeNode(serverId);
+      this.serverQueues.get(serverId)?.clear();
+      this.watchdog.notifyCrash(serverId, performance.now());
+      this.addIncident(
+        mode === 'oom_crash' ? 'critical' : 'error',
+        serverId,
+        `${server.name} ${mode === 'oom_crash' ? 'killed by OOM (>512MB RAM)' : 'crashed'}!`
+      );
+    } else if (mode === 'healthy') {
+      server.health = 'healthy';
+      this.hashRing.addNode(serverId);
+      this.watchdog.notifyRecovery(serverId);
+      this.addIncident('info', serverId, `${server.name} restored to healthy cluster pool.`);
+    } else if (mode === 'degraded') {
+      server.health = 'degraded';
+      this.addIncident(
+        'warn',
+        serverId,
+        `${server.name} marked degraded (4.5x latency + 8% packet drops).`
+      );
+    } else if (mode === 'flapping') {
+      server.health = 'flapping';
+      this.addIncident('warn', serverId, `${server.name} entered network flapping state!`);
+    }
+    this.notify();
+  }
+
+  public isWatchdogEnabled(serverId: string): boolean {
+    return this.watchdog.isEnabled(serverId);
+  }
+
+  public toggleWatchdog(serverId: string, enabled: boolean): void {
+    this.watchdog.setEnabled(serverId, enabled);
+    this.notify();
+  }
+
+  public getWatchdogProgress(serverId: string) {
+    return this.watchdog.getRestartProgress(serverId, performance.now());
+  }
+
+  public manualRestartServer(serverId: string): void {
+    this.setServerDetailedMode(serverId, 'healthy');
+  }
+
+  public addServerNode(): void {
+    if (this.serverNodes.length >= 6) return;
+    const nextIdx = this.serverNodes.length + 1;
+    const newId = `server-${nextIdx}`;
+    const newServer: ServerNodeState = {
+      id: newId,
+      name: `Worker Server ${nextIdx}`,
+      type: 'server',
+      health: 'healthy',
+      activeConnections: 0,
+      maxConnections: 600,
+      queueDepth: 0,
+      maxQueueDepth: 150,
+      cpuLoad: 15,
+      processedTotal: 0,
+      failedTotal: 0,
+      threadPoolActive: 0,
+      threadPoolSize: 50,
+      circuitBreakerState: 'closed',
+      failureCountConsecutive: 0,
+    };
+
+    this.serverNodes.push(newServer);
+    this.serverQueues.set(
+      newId,
+      new QueueBuffer({
+        maxQueueDepth: 150,
+        serviceRateMu: this.config.serverCapacityRps,
+        concurrencyLimit: newServer.threadPoolSize,
+      })
+    );
+    this.healthChecker.registerNode(newId, true);
+    this.stateMachine.register(newId, 'healthy');
+    this.watchdog.register(newId, true, 4000);
+    this.hashRing.addNode(newId);
+
+    this.addIncident('info', newId, `Auto-scaled out: ${newServer.name} provisioned & online.`);
+    this.notify();
+  }
+
+  public removeServerNode(): void {
+    if (this.serverNodes.length <= 1) return;
+    const removed = this.serverNodes.pop()!;
+    this.serverQueues.get(removed.id)?.clear();
+    this.serverQueues.delete(removed.id);
+    this.hashRing.removeNode(removed.id);
+
+    this.addIncident('info', removed.id, `Scaled in: ${removed.name} decommissioned from pool.`);
+    this.notify();
+  }
+
   public toggleServer(index: number): void {
     const server = this.serverNodes[index];
     if (!server) return;
 
     if (server.health === 'crashed') {
-      server.health = 'healthy';
-      server.cpuLoad = 10;
-      this.hashRing.addNode(server.id);
-      this.addIncident('info', server.id, `${server.name} recovered and returned to active pool.`);
+      this.setServerDetailedMode(server.id, 'healthy');
     } else {
-      server.health = 'crashed';
-      server.cpuLoad = 0;
-      server.activeConnections = 0;
-      server.queueDepth = 0;
-      this.hashRing.removeNode(server.id);
-      this.serverQueues.get(server.id)?.clear();
-      this.addIncident('error', server.id, `${server.name} crashed! Ejected from active pool.`);
+      this.setServerDetailedMode(server.id, 'crashed');
     }
-    this.notify();
   }
 
   public toggleDb(): void {
@@ -274,6 +397,21 @@ export class SimulationEngine {
 
   private onTick(deltaMs: number): void {
     const now = performance.now();
+
+    // 0. Watchdog auto-restart check
+    this.watchdog.checkRestarts(now, (resurrectedId) => {
+      this.setServerDetailedMode(resurrectedId, 'healthy');
+      this.addIncident(
+        'info',
+        resurrectedId,
+        `Watchdog supervisor auto-resurrected ${resurrectedId} after crash.`
+      );
+    });
+
+    // Tick flapping state machines
+    for (const server of this.serverNodes) {
+      this.stateMachine.tick(server.id, now);
+    }
 
     // 1. Generate incoming client packets
     const newPackets = this.trafficGen.generateTickPackets(deltaMs);
@@ -334,6 +472,21 @@ export class SimulationEngine {
         continue;
       }
 
+      // State machine acceptance filter (crashed, OOM, flapping dropped, degraded drop rate)
+      const acceptCheck = this.stateMachine.shouldAcceptPacket(targetServer.id);
+      if (!acceptCheck.accepted) {
+        if (acceptCheck.reason === 'OOM_KILLED') {
+          packet.status = 'error_500';
+        } else if (acceptCheck.reason === 'NETWORK_FLAP_DROP') {
+          packet.status = 'timeout_504';
+        } else {
+          packet.status = 'circuit_broken_503';
+        }
+        packet.totalLatencyMs = this.config.networkLatencyMs * 2;
+        this.metrics.recordCompleted(packet);
+        continue;
+      }
+
       packet.targetServerId = targetServer.id;
       const queue = this.serverQueues.get(targetServer.id);
 
@@ -360,6 +513,9 @@ export class SimulationEngine {
 
       queue.step(deltaMs, (completedPacket) => {
         let extraLatency = this.config.networkLatencyMs;
+        const latencyMult = this.stateMachine.getLatencyMultiplier(server.id);
+        extraLatency = Math.round(extraLatency * latencyMult);
+
         if (completedPacket.type === 'read' && this.config.cacheEnabled) {
           completedPacket.cacheHit = Math.random() < 0.88;
           if (completedPacket.cacheHit) {
@@ -386,14 +542,25 @@ export class SimulationEngine {
         this.metrics.recordCompleted(completedPacket);
       });
 
-      // Update server telemetry states
+      // Update server telemetry states & physical resource calculations
       const arrivalRatePerServer =
         aliveServers.length > 0 ? this.config.targetRps / aliveServers.length : 0;
       const qm = queue.getMetrics(arrivalRatePerServer);
 
       server.queueDepth = qm.currentDepth;
       server.activeConnections = queue.getActiveProcessingCount();
-      server.cpuLoad = Math.min(99, Math.round(qm.utilizationRho * 100));
+
+      const res = this.resourceManager.computeResources(
+        server.queueDepth,
+        server.activeConnections,
+        this.stateMachine.getMode(server.id) === 'degraded'
+      );
+      server.cpuLoad = res.cpuUsagePercentage;
+
+      // Auto-trigger OOM kill if memory bounds breached
+      if (res.isOom && this.stateMachine.getMode(server.id) !== 'oom_crash') {
+        this.setServerDetailedMode(server.id, 'oom_crash');
+      }
 
       if (server.cpuLoad > 90 && Math.random() < 0.05) {
         this.addIncident('warn', server.id, `${server.name} CPU load exceeded 90%!`);

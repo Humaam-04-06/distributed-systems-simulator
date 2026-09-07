@@ -23,6 +23,7 @@ import {
   Disc3,
 } from 'lucide-react';
 import { LoadBalancingAlgorithm } from './engine/types';
+import { ServerClusterGrid } from './components/nodes/ServerClusterGrid';
 
 export const App: React.FC = () => {
   const {
@@ -46,11 +47,21 @@ export const App: React.FC = () => {
     toggleServer,
     toggleDb,
     toggleCache,
+    getServerResources,
+    getServerMode,
+    setServerDetailedMode,
+    isWatchdogEnabled,
+    toggleWatchdog,
+    getWatchdogProgress,
+    restartServer,
+    addServerNode,
+    removeServerNode,
   } = useSimulation();
 
   const [chaosActive, setChaosActive] = useState<boolean>(false);
   const [circuitBreaker, setCircuitBreaker] = useState<boolean>(true);
   const [isHashRingOpen, setIsHashRingOpen] = useState<boolean>(false);
+  const [centerTab, setCenterTab] = useState<'topology' | 'cluster'>('topology');
 
   const activeServers = serverNodes.filter((s) => s.health !== 'crashed').length;
   const totalServers = serverNodes.length;
@@ -272,30 +283,75 @@ export const App: React.FC = () => {
           </Card>
         </aside>
 
-        {/* Center Column: Architecture Topology Canvas (6 Cols) */}
-        <section className="lg:col-span-6 flex flex-col gap-5">
-          <Card
-            className="flex-1 min-h-[580px] relative overflow-hidden"
-            title={
-              <span className="flex items-center gap-2 text-[#e0e1dd]">
-                <Network className="w-4 h-4 text-[#778da9]" />
-                Distributed Architecture Topology
-              </span>
-            }
-            headerAction={
-              <div className="flex items-center gap-2">
-                <Badge variant="blue" size="sm">
-                  {lbNode.algorithm.toUpperCase()}
-                </Badge>
-                <Badge
-                  variant={dbNode.health !== 'crashed' ? 'emerald' : 'crimson'}
-                  size="sm"
-                >
-                  {dbNode.health !== 'crashed' ? 'DB Cluster Synced' : 'DB Primary Down'}
-                </Badge>
-              </div>
-            }
-          >
+        {/* Center Column: Architecture Topology Canvas or Worker Server Cluster (6 Cols) */}
+        <section className="lg:col-span-6 flex flex-col gap-4">
+          {/* Tab Navigation Switcher */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2 bg-[#1b263b] p-1 rounded-xl border border-[#415a77]">
+              <button
+                onClick={() => setCenterTab('topology')}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  centerTab === 'topology'
+                    ? 'bg-[#415a77] text-[#e0e1dd] shadow font-semibold'
+                    : 'text-[#778da9] hover:text-[#e0e1dd]'
+                }`}
+              >
+                <Network className="w-3.5 h-3.5" />
+                Architecture Topology
+              </button>
+              <button
+                onClick={() => setCenterTab('cluster')}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  centerTab === 'cluster'
+                    ? 'bg-[#415a77] text-[#e0e1dd] shadow font-semibold'
+                    : 'text-[#778da9] hover:text-[#e0e1dd]'
+                }`}
+              >
+                <Server className="w-3.5 h-3.5" />
+                Worker Server Cluster
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#0d1b2a] text-cyan-300 font-mono font-semibold">
+                  {serverNodes.length} Nodes
+                </span>
+              </button>
+            </div>
+          </div>
+
+          {centerTab === 'cluster' ? (
+            <ServerClusterGrid
+              servers={serverNodes}
+              getServerResources={getServerResources}
+              getServerMode={getServerMode}
+              isWatchdogEnabled={isWatchdogEnabled}
+              getWatchdogProgress={getWatchdogProgress}
+              onModeChange={setServerDetailedMode}
+              onWatchdogToggle={toggleWatchdog}
+              onManualRestart={restartServer}
+              onAddServer={addServerNode}
+              onRemoveServer={removeServerNode}
+            />
+          ) : (
+            <Card
+              className="flex-1 min-h-[580px] relative overflow-hidden"
+              title={
+                <span className="flex items-center gap-2 text-[#e0e1dd]">
+                  <Network className="w-4 h-4 text-[#778da9]" />
+                  Distributed Architecture Topology
+                </span>
+              }
+              headerAction={
+                <div className="flex items-center gap-2">
+                  <Badge variant="blue" size="sm">
+                    {lbNode.algorithm.toUpperCase()}
+                  </Badge>
+                  <Badge
+                    variant={dbNode.health !== 'crashed' ? 'emerald' : 'crimson'}
+                    size="sm"
+                  >
+                    {dbNode.health !== 'crashed' ? 'DB Cluster Synced' : 'DB Primary Down'}
+                  </Badge>
+                </div>
+              }
+            >
             {/* SVG Connector Conduit Paths Layer */}
             <div className="relative w-full h-full min-h-[520px] flex flex-col items-center justify-between p-4 select-none">
               <svg className="absolute inset-0 w-full h-full pointer-events-none z-0">
@@ -593,6 +649,7 @@ export const App: React.FC = () => {
               </div>
             </div>
           </Card>
+          )}
         </section>
 
         {/* Right Column: Telemetry HUD & Incident Feed (3 Cols) */}

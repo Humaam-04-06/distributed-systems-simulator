@@ -4,6 +4,8 @@
 
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { SimulationEngine } from '../engine/SimulationEngine';
+import { DetailedServerMode } from '../engine/ServerStateMachine';
+import { ServerResources } from '../engine/ServerResourceManager';
 import {
   IncidentEvent,
   ServerNodeState,
@@ -129,6 +131,63 @@ export function useSimulation() {
     engine.toggleCache();
   }, [engine]);
 
+  const getServerResources = useCallback(
+    (serverId: string): ServerResources => {
+      return engine.getServerResources(serverId);
+    },
+    [engine]
+  );
+
+  const getServerMode = useCallback(
+    (serverId: string): DetailedServerMode => {
+      return engine.getServerMode(serverId);
+    },
+    [engine]
+  );
+
+  const setServerDetailedMode = useCallback(
+    (serverId: string, mode: DetailedServerMode) => {
+      engine.setServerDetailedMode(serverId, mode);
+    },
+    [engine]
+  );
+
+  const isWatchdogEnabled = useCallback(
+    (serverId: string): boolean => {
+      return engine.isWatchdogEnabled(serverId);
+    },
+    [engine]
+  );
+
+  const toggleWatchdog = useCallback(
+    (serverId: string, enabled: boolean) => {
+      engine.toggleWatchdog(serverId, enabled);
+    },
+    [engine]
+  );
+
+  const getWatchdogProgress = useCallback(
+    (serverId: string) => {
+      return engine.getWatchdogProgress(serverId);
+    },
+    [engine]
+  );
+
+  const restartServer = useCallback(
+    (serverId: string) => {
+      engine.manualRestartServer(serverId);
+    },
+    [engine]
+  );
+
+  const addServerNode = useCallback(() => {
+    engine.addServerNode();
+  }, [engine]);
+
+  const removeServerNode = useCallback(() => {
+    engine.removeServerNode();
+  }, [engine]);
+
   return {
     isRunning,
     speed,
@@ -150,5 +209,14 @@ export function useSimulation() {
     toggleServer,
     toggleDb,
     toggleCache,
+    getServerResources,
+    getServerMode,
+    setServerDetailedMode,
+    isWatchdogEnabled,
+    toggleWatchdog,
+    getWatchdogProgress,
+    restartServer,
+    addServerNode,
+    removeServerNode,
   };
 }
