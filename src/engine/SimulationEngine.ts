@@ -13,6 +13,9 @@ import { HealthChecker } from './HealthChecker';
 import { ServerResourceManager, ServerResources } from './ServerResourceManager';
 import { ServerStateMachine, DetailedServerMode } from './ServerStateMachine';
 import { WatchdogSupervisor } from './WatchdogSupervisor';
+import { DatabaseReplicationEngine, DatabaseNode, ReplicationMode } from './DatabaseReplicationEngine';
+import { FailoverElectionManager } from './FailoverElectionManager';
+import { WriteConflictDetector, WriteConflict } from './WriteConflictDetector';
 import {
   IncidentEvent,
   IncidentSeverity,
@@ -39,6 +42,9 @@ export class SimulationEngine {
   public resourceManager: ServerResourceManager;
   public stateMachine: ServerStateMachine;
   public watchdog: WatchdogSupervisor;
+  public dbReplication: DatabaseReplicationEngine;
+  public failoverElection: FailoverElectionManager;
+  public conflictDetector: WriteConflictDetector;
 
   // Cluster Nodes
   public lbNode: LoadBalancerNodeState;
@@ -90,6 +96,9 @@ export class SimulationEngine {
     this.resourceManager = new ServerResourceManager();
     this.stateMachine = new ServerStateMachine();
     this.watchdog = new WatchdogSupervisor();
+    this.dbReplication = new DatabaseReplicationEngine();
+    this.failoverElection = new FailoverElectionManager(this.dbReplication);
+    this.conflictDetector = new WriteConflictDetector();
 
     // 1. Initialize Load Balancer Node State
     this.lbNode = {
@@ -357,19 +366,91 @@ export class SimulationEngine {
     }
   }
 
-  public toggleDb(): void {
-    if (this.dbNode.health === 'crashed') {
-      this.dbNode.health = 'healthy';
-      this.addIncident('info', this.dbNode.id, 'Primary Database reconnected & synchronized.');
-    } else {
-      this.dbNode.health = 'crashed';
-      this.addIncident(
-        'critical',
-        this.dbNode.id,
-        'Primary Database outage! Read-only failover active.'
-      );
+  public getDbNodes(): DatabaseNode[] {
+    return this.dbReplication.getNodes();
+  }
+
+  public getDbReplicationMode(): ReplicationMode {
+    return this.dbReplication.getReplicationMode();
+  }
+
+  public setDbReplicationMode(mode: ReplicationMode): void {
+    this.dbReplication.setReplicationMode(mode);
+    this.addIncident('info', 'db-primary', `Switched replication mode to ${mode.toUpperCase()}.`);
+    this.notify();
+  }
+
+  public promoteDbReplica(replicaId: string): void {
+    const res = this.failoverElection.promoteReplica(replicaId);
+    if (res.success) {
+      this.addIncident('warn', replicaId, res.message);
     }
     this.notify();
+  }
+
+  public toggleDbNodeHealth(nodeId: string): void {
+    const node = this.dbReplication.getNode(nodeId);
+    if (!node) return;
+
+    if (node.health === 'crashed') {
+      this.dbReplication.setNodeHealth(nodeId, 'healthy');
+      this.addIncident('info', nodeId, `${node.name} restored to cluster pool.`);
+    } else {
+      this.dbReplication.setNodeHealth(nodeId, 'crashed');
+      this.addIncident('critical', nodeId, `${node.name} went offline (outage)!`);
+
+      // If it was the primary, try auto-failover election!
+      if (node.role === 'primary' && this.failoverElection.isAutoFailover()) {
+        const election = this.failoverElection.performAutomaticElection('LEADER_FAILURE');
+        if (election.elected && election.newLeader) {
+          this.addIncident(
+            'warn',
+            election.newLeader.id,
+            `Automatic Failover: ${election.newLeader.name} elected new Primary!`
+          );
+        }
+      }
+    }
+    this.notify();
+  }
+
+  public triggerSplitBrain(): void {
+    const res = this.failoverElection.triggerSplitBrain();
+    if (res.success) {
+      this.addIncident('critical', 'db-primary', res.message);
+    }
+    this.notify();
+  }
+
+  public resolveSplitBrain(strategy: 'stonith' | 'demote' = 'stonith'): void {
+    const res = this.failoverElection.resolveSplitBrain(strategy);
+    if (res.success) {
+      this.addIncident('info', 'db-primary', res.message);
+    }
+    this.notify();
+  }
+
+  public getWriteConflicts(): WriteConflict[] {
+    return this.conflictDetector.getConflicts();
+  }
+
+  public resolveWriteConflicts(strategy: 'lww' | 'highest_lsn' = 'lww'): void {
+    const count = this.conflictDetector.resolveAll(strategy);
+    this.addIncident(
+      'info',
+      'db-primary',
+      `Reconciled ${count} write conflict(s) using ${strategy.toUpperCase()}.`
+    );
+    this.notify();
+  }
+
+  public toggleDb(): void {
+    const primary = this.dbReplication.getPrimaryNode();
+    if (primary) {
+      this.toggleDbNodeHealth(primary.id);
+    } else {
+      this.toggleDbNodeHealth('db-primary');
+    }
   }
 
   public toggleCache(): void {
@@ -526,14 +607,58 @@ export class SimulationEngine {
             extraLatency += 25; // Cache miss -> DB lookup
           }
         } else {
-          // Write or cache bypassed
-          if (this.dbNode.health === 'crashed') {
-            completedPacket.status = 'error_500';
-            completedPacket.totalLatencyMs = extraLatency + 200;
-            this.metrics.recordCompleted(completedPacket);
-            return;
+          // Write or cache bypassed (Direct Database Access)
+          if (completedPacket.type === 'write') {
+            const writeRes = this.dbReplication.executeWrite(extraLatency);
+            if (!writeRes.success) {
+              if (this.failoverElection.isAutoFailover()) {
+                const election =
+                  this.failoverElection.performAutomaticElection('PRIMARY_WRITE_FAILURE');
+                if (election.elected && election.newLeader) {
+                  this.addIncident(
+                    'warn',
+                    election.newLeader.id,
+                    `Failover: ${election.newLeader.name} elected new Primary leader!`
+                  );
+                }
+              }
+              completedPacket.status = 'error_500';
+              completedPacket.totalLatencyMs = extraLatency + 200;
+              this.metrics.recordCompleted(completedPacket);
+              return;
+            }
+            extraLatency = writeRes.ackLatencyMs;
+
+            // If split-brain is active, simulate concurrent conflicting mutations
+            if (this.failoverElection.isSplitBrain()) {
+              const randKey = `entity:${Math.floor(Math.random() * 6)}`;
+              const randVal = `val_${Math.random().toString(36).substring(7)}`;
+              const conflict = this.conflictDetector.recordWrite(
+                randKey,
+                randVal,
+                'db-primary',
+                writeRes.lsn,
+                true
+              );
+              if (conflict) {
+                this.addIncident(
+                  'critical',
+                  'db-primary',
+                  `Write conflict detected on [${randKey}] in Split-Brain partition!`
+                );
+              }
+            }
+          } else {
+            // Read query that missed cache
+            const readRes = this.dbReplication.executeRead(true);
+            if (!readRes.success) {
+              completedPacket.status = 'error_500';
+              completedPacket.totalLatencyMs = extraLatency + 200;
+              this.metrics.recordCompleted(completedPacket);
+              return;
+            }
+            extraLatency += readRes.isReplica ? 12 : 22;
           }
-          extraLatency += 35;
         }
 
         completedPacket.status = 'success_200';
@@ -565,6 +690,22 @@ export class SimulationEngine {
       if (server.cpuLoad > 90 && Math.random() < 0.05) {
         this.addIncident('warn', server.id, `${server.name} CPU load exceeded 90%!`);
       }
+    }
+
+    // Tick database replication stream
+    const writeRps = Math.round(this.config.targetRps * (1 - this.config.readWriteRatio));
+    this.dbReplication.tick(deltaMs, writeRps, this.config.networkLatencyMs);
+
+    // Sync legacy dbNode for topology UI compatibility
+    const curPrimary = this.dbReplication.getPrimaryNode();
+    if (curPrimary) {
+      this.dbNode.id = curPrimary.id;
+      this.dbNode.name = curPrimary.name;
+      this.dbNode.health = curPrimary.health;
+      this.dbNode.cpuLoad = curPrimary.cpuLoad;
+      this.dbNode.replicationLagMs = this.dbReplication.getReplicas()[0]?.replicationLagMs ?? 0;
+    } else {
+      this.dbNode.health = 'crashed';
     }
 
     // 5. Update Metrics

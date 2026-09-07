@@ -6,6 +6,8 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { SimulationEngine } from '../engine/SimulationEngine';
 import { DetailedServerMode } from '../engine/ServerStateMachine';
 import { ServerResources } from '../engine/ServerResourceManager';
+import { DatabaseNode, ReplicationMode } from '../engine/DatabaseReplicationEngine';
+import { WriteConflict } from '../engine/WriteConflictDetector';
 import {
   IncidentEvent,
   ServerNodeState,
@@ -38,6 +40,17 @@ export function useSimulation() {
   const [incidents, setIncidents] = useState<IncidentEvent[]>([...engine.incidents]);
   const [config, setConfig] = useState({ ...engine.config });
   const [uptimeSeconds, setUptimeSeconds] = useState<number>(0);
+  const [dbNodes, setDbNodes] = useState<DatabaseNode[]>([...engine.getDbNodes()]);
+  const [replicationMode, setReplicationModeState] = useState<ReplicationMode>(
+    engine.getDbReplicationMode()
+  );
+  const [isSplitBrain, setIsSplitBrain] = useState<boolean>(engine.failoverElection.isSplitBrain());
+  const [splitBrainPrimaries, setSplitBrainPrimaries] = useState<string[]>([
+    ...engine.failoverElection.getSplitBrainPrimaries(),
+  ]);
+  const [writeConflicts, setWriteConflicts] = useState<WriteConflict[]>([
+    ...engine.getWriteConflicts(),
+  ]);
 
   // Subscribe to engine tick notifications
   useEffect(() => {
@@ -49,6 +62,11 @@ export function useSimulation() {
       setCacheNode({ ...engine.cacheNode });
       setIncidents([...engine.incidents]);
       setConfig({ ...engine.config });
+      setDbNodes([...engine.getDbNodes()]);
+      setReplicationModeState(engine.getDbReplicationMode());
+      setIsSplitBrain(engine.failoverElection.isSplitBrain());
+      setSplitBrainPrimaries([...engine.failoverElection.getSplitBrainPrimaries()]);
+      setWriteConflicts([...engine.getWriteConflicts()]);
     });
 
     // Start simulation clock
@@ -188,6 +206,45 @@ export function useSimulation() {
     engine.removeServerNode();
   }, [engine]);
 
+  const setReplicationMode = useCallback(
+    (mode: ReplicationMode) => {
+      engine.setDbReplicationMode(mode);
+    },
+    [engine]
+  );
+
+  const promoteDbReplica = useCallback(
+    (replicaId: string) => {
+      engine.promoteDbReplica(replicaId);
+    },
+    [engine]
+  );
+
+  const toggleDbNodeHealth = useCallback(
+    (nodeId: string) => {
+      engine.toggleDbNodeHealth(nodeId);
+    },
+    [engine]
+  );
+
+  const triggerSplitBrain = useCallback(() => {
+    engine.triggerSplitBrain();
+  }, [engine]);
+
+  const resolveSplitBrain = useCallback(
+    (strategy: 'stonith' | 'demote') => {
+      engine.resolveSplitBrain(strategy);
+    },
+    [engine]
+  );
+
+  const resolveWriteConflicts = useCallback(
+    (strategy: 'lww' | 'highest_lsn') => {
+      engine.resolveWriteConflicts(strategy);
+    },
+    [engine]
+  );
+
   return {
     isRunning,
     speed,
@@ -199,6 +256,11 @@ export function useSimulation() {
     incidents,
     config,
     uptimeSeconds,
+    dbNodes,
+    replicationMode,
+    isSplitBrain,
+    splitBrainPrimaries,
+    writeConflicts,
     toggleRunning,
     setSpeed,
     reset,
@@ -218,5 +280,11 @@ export function useSimulation() {
     restartServer,
     addServerNode,
     removeServerNode,
+    setReplicationMode,
+    promoteDbReplica,
+    toggleDbNodeHealth,
+    triggerSplitBrain,
+    resolveSplitBrain,
+    resolveWriteConflicts,
   };
 }

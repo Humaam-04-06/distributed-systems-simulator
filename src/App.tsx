@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { LoadBalancingAlgorithm } from './engine/types';
 import { ServerClusterGrid } from './components/nodes/ServerClusterGrid';
+import { DatabaseClusterView } from './components/database/DatabaseClusterView';
 
 export const App: React.FC = () => {
   const {
@@ -37,6 +38,11 @@ export const App: React.FC = () => {
     incidents,
     config,
     uptimeSeconds,
+    dbNodes,
+    replicationMode,
+    isSplitBrain,
+    splitBrainPrimaries,
+    writeConflicts,
     toggleRunning,
     setSpeed,
     reset,
@@ -56,12 +62,18 @@ export const App: React.FC = () => {
     restartServer,
     addServerNode,
     removeServerNode,
+    setReplicationMode,
+    promoteDbReplica,
+    toggleDbNodeHealth,
+    triggerSplitBrain,
+    resolveSplitBrain,
+    resolveWriteConflicts,
   } = useSimulation();
 
   const [chaosActive, setChaosActive] = useState<boolean>(false);
   const [circuitBreaker, setCircuitBreaker] = useState<boolean>(true);
   const [isHashRingOpen, setIsHashRingOpen] = useState<boolean>(false);
-  const [centerTab, setCenterTab] = useState<'topology' | 'cluster'>('topology');
+  const [centerTab, setCenterTab] = useState<'topology' | 'cluster' | 'database'>('topology');
 
   const activeServers = serverNodes.filter((s) => s.health !== 'crashed').length;
   const totalServers = serverNodes.length;
@@ -313,6 +325,26 @@ export const App: React.FC = () => {
                   {serverNodes.length} Nodes
                 </span>
               </button>
+              <button
+                onClick={() => setCenterTab('database')}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  centerTab === 'database'
+                    ? 'bg-[#415a77] text-[#e0e1dd] shadow font-semibold'
+                    : 'text-[#778da9] hover:text-[#e0e1dd]'
+                }`}
+              >
+                <Database className="w-3.5 h-3.5 text-amber-300" />
+                Database Cluster
+                {isSplitBrain ? (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-rose-600 text-white font-mono font-bold animate-pulse">
+                    SPLIT-BRAIN
+                  </span>
+                ) : (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#0d1b2a] text-amber-300 font-mono font-semibold">
+                    {replicationMode.toUpperCase()}
+                  </span>
+                )}
+              </button>
             </div>
           </div>
 
@@ -328,6 +360,20 @@ export const App: React.FC = () => {
               onManualRestart={restartServer}
               onAddServer={addServerNode}
               onRemoveServer={removeServerNode}
+            />
+          ) : centerTab === 'database' ? (
+            <DatabaseClusterView
+              nodes={dbNodes}
+              replicationMode={replicationMode}
+              isSplitBrain={isSplitBrain}
+              splitBrainPrimaries={splitBrainPrimaries}
+              conflicts={writeConflicts}
+              onSetReplicationMode={setReplicationMode}
+              onPromoteReplica={promoteDbReplica}
+              onToggleNodeHealth={toggleDbNodeHealth}
+              onTriggerSplitBrain={triggerSplitBrain}
+              onResolveSplitBrain={resolveSplitBrain}
+              onResolveConflicts={resolveWriteConflicts}
             />
           ) : (
             <Card
