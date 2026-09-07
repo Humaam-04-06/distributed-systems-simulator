@@ -21,7 +21,7 @@ export const Button: React.FC<ButtonProps> = ({
   ...props
 }) => {
   const baseStyles =
-    'relative inline-flex items-center justify-center font-medium transition-all duration-150 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/40 disabled:opacity-40 disabled:cursor-not-allowed select-none active:scale-[0.98]';
+    'relative inline-flex items-center justify-center font-medium transition-all duration-150 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#778da9]/40 disabled:opacity-40 disabled:cursor-not-allowed select-none active:scale-[0.98]';
 
   const sizeStyles = {
     xs: 'px-2 py-1 text-xs gap-1',
@@ -32,17 +32,17 @@ export const Button: React.FC<ButtonProps> = ({
 
   const variantStyles = {
     primary:
-      'bg-blue-600 text-white hover:bg-blue-500 border border-blue-500/30 shadow-sm font-semibold',
+      'bg-[#415a77] text-[#e0e1dd] hover:bg-[#526e8f] border border-[#778da9]/50 shadow-sm font-semibold',
     secondary:
-      'bg-surface-elevated text-slate-200 hover:bg-surface-hover hover:text-white border border-surface-border shadow-sm',
+      'bg-[#223049] text-[#e0e1dd] hover:bg-[#2b3d5b] hover:text-white border border-[#415a77] shadow-sm',
     danger:
-      'bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 border border-rose-500/30 hover:border-rose-500/50',
+      'bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 border border-rose-500/30 hover:border-rose-500/50',
     warning:
-      'bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 border border-amber-500/30 hover:border-amber-500/50',
+      'bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 border border-amber-500/30 hover:border-amber-500/50',
     ghost:
-      'bg-transparent text-slate-400 hover:text-slate-100 hover:bg-surface-elevated border border-transparent',
+      'bg-transparent text-[#778da9] hover:text-[#e0e1dd] hover:bg-[#223049] border border-transparent',
     outline:
-      'bg-transparent text-slate-300 hover:text-white hover:bg-surface-elevated border border-surface-border hover:border-slate-600',
+      'bg-transparent text-[#e0e1dd] hover:text-white hover:bg-[#223049] border border-[#415a77] hover:border-[#778da9]',
   };
 
   return (

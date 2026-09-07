@@ -37,15 +37,15 @@ export const Slider: React.FC<SliderProps> = ({
   return (
     <div className={cn('space-y-1.5', className)}>
       <div className="flex items-center justify-between text-xs">
-        <span className="font-medium text-slate-300 font-sans flex items-center gap-1.5">
+        <span className="font-medium text-[#e0e1dd] font-sans flex items-center gap-1.5">
           {label}
           {isDanger && (
-            <span className="text-rose-400 font-mono font-semibold text-[10px] px-1.5 py-0.2 bg-rose-500/10 border border-rose-500/30 rounded">
+            <span className="text-rose-300 font-mono font-semibold text-[10px] px-1.5 py-0.2 bg-rose-500/15 border border-rose-500/40 rounded">
               CRITICAL 💀
             </span>
           )}
           {isWarning && (
-            <span className="text-amber-400 font-mono font-semibold text-[10px] px-1.5 py-0.2 bg-amber-500/10 border border-amber-500/30 rounded">
+            <span className="text-amber-300 font-mono font-semibold text-[10px] px-1.5 py-0.2 bg-amber-500/15 border border-amber-500/40 rounded">
               HIGH LOAD
             </span>
           )}
@@ -54,10 +54,10 @@ export const Slider: React.FC<SliderProps> = ({
           className={cn(
             'font-mono font-semibold px-2 py-0.5 rounded text-xs transition-colors duration-150',
             isDanger
-              ? 'text-rose-300 bg-rose-500/10 border border-rose-500/20'
+              ? 'text-rose-300 bg-rose-500/15 border border-rose-500/30'
               : isWarning
-              ? 'text-amber-300 bg-amber-500/10 border border-amber-500/20'
-              : 'text-slate-100 bg-surface-elevated border border-surface-border'
+              ? 'text-amber-300 bg-amber-500/15 border border-amber-500/30'
+              : 'text-[#e0e1dd] bg-[#223049] border border-[#415a77]'
           )}
         >
           {value.toLocaleString()} {unit}
@@ -72,27 +72,27 @@ export const Slider: React.FC<SliderProps> = ({
           step={step}
           value={value}
           onChange={(e) => onChange(Number(e.target.value))}
-          className="w-full h-1.5 bg-surface-elevated rounded-lg appearance-none cursor-pointer accent-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/30"
+          className="w-full h-1.5 bg-[#223049] rounded-lg appearance-none cursor-pointer accent-[#778da9] focus:outline-none"
           style={{
             background: `linear-gradient(to right, ${
               isDanger
-                ? '#f43f5e'
+                ? '#ef4444'
                 : isWarning
                 ? '#f59e0b'
-                : '#3b82f6'
+                : '#778da9'
             } 0%, ${
               isDanger
-                ? '#f43f5e'
+                ? '#ef4444'
                 : isWarning
                 ? '#f59e0b'
-                : '#3b82f6'
-            } ${percentage}%, #1e2436 ${percentage}%, #1e2436 100%)`,
+                : '#778da9'
+            } ${percentage}%, #223049 ${percentage}%, #223049 100%)`,
           }}
         />
       </div>
 
       {helpText && (
-        <div className="text-[11px] text-slate-500 font-sans flex justify-between">
+        <div className="text-[11px] text-[#778da9] font-sans flex justify-between">
           <span>{helpText}</span>
           <span className="font-mono">
             {min} - {max} {unit}
