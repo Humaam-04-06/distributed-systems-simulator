@@ -8,6 +8,9 @@ import { DetailedServerMode } from '../engine/ServerStateMachine';
 import { ServerResources } from '../engine/ServerResourceManager';
 import { DatabaseNode, ReplicationMode } from '../engine/DatabaseReplicationEngine';
 import { WriteConflict } from '../engine/WriteConflictDetector';
+import { CacheEntry, CacheMetrics, EvictionPolicy } from '../engine/CacheEvictionEngine';
+import { StampedeEvent } from '../engine/CacheStampedeSimulator';
+import { StampedeMitigationStrategy } from '../engine/CacheMitigationManager';
 import {
   IncidentEvent,
   ServerNodeState,
@@ -51,6 +54,17 @@ export function useSimulation() {
   const [writeConflicts, setWriteConflicts] = useState<WriteConflict[]>([
     ...engine.getWriteConflicts(),
   ]);
+  const [cacheMetrics, setCacheMetrics] = useState<CacheMetrics>(engine.getCacheMetrics());
+  const [cacheEntries, setCacheEntries] = useState<CacheEntry[]>([...engine.getCacheEntries()]);
+  const [cachePolicy, setCachePolicyState] = useState<EvictionPolicy>(engine.getCachePolicy());
+  const [cacheMitigationStrategy, setCacheMitigationStrategyState] =
+    useState<StampedeMitigationStrategy>(engine.getCacheMitigationStrategy());
+  const [isStampedeActive, setIsStampedeActive] = useState<boolean>(
+    engine.stampedeSim.getActiveStampede() !== null
+  );
+  const [activeStampede, setActiveStampede] = useState<StampedeEvent | null>(
+    engine.stampedeSim.getActiveStampede()
+  );
 
   // Subscribe to engine tick notifications
   useEffect(() => {
@@ -67,6 +81,12 @@ export function useSimulation() {
       setIsSplitBrain(engine.failoverElection.isSplitBrain());
       setSplitBrainPrimaries([...engine.failoverElection.getSplitBrainPrimaries()]);
       setWriteConflicts([...engine.getWriteConflicts()]);
+      setCacheMetrics(engine.getCacheMetrics());
+      setCacheEntries([...engine.getCacheEntries()]);
+      setCachePolicyState(engine.getCachePolicy());
+      setCacheMitigationStrategyState(engine.getCacheMitigationStrategy());
+      setIsStampedeActive(engine.stampedeSim.getActiveStampede() !== null);
+      setActiveStampede(engine.stampedeSim.getActiveStampede());
     });
 
     // Start simulation clock
@@ -245,6 +265,38 @@ export function useSimulation() {
     [engine]
   );
 
+  const setCachePolicy = useCallback(
+    (policy: EvictionPolicy) => {
+      engine.setCachePolicy(policy);
+    },
+    [engine]
+  );
+
+  const setCacheMitigationStrategy = useCallback(
+    (strategy: StampedeMitigationStrategy) => {
+      engine.setCacheMitigationStrategy(strategy);
+    },
+    [engine]
+  );
+
+  const triggerCacheStampede = useCallback(
+    (key?: string) => {
+      engine.triggerCacheStampede(key);
+    },
+    [engine]
+  );
+
+  const invalidateCacheKey = useCallback(
+    (key: string) => {
+      engine.invalidateCacheKey(key);
+    },
+    [engine]
+  );
+
+  const clearCache = useCallback(() => {
+    engine.clearCache();
+  }, [engine]);
+
   return {
     isRunning,
     speed,
@@ -261,6 +313,12 @@ export function useSimulation() {
     isSplitBrain,
     splitBrainPrimaries,
     writeConflicts,
+    cacheMetrics,
+    cacheEntries,
+    cachePolicy,
+    cacheMitigationStrategy,
+    isStampedeActive,
+    activeStampede,
     toggleRunning,
     setSpeed,
     reset,
@@ -286,5 +344,10 @@ export function useSimulation() {
     triggerSplitBrain,
     resolveSplitBrain,
     resolveWriteConflicts,
+    setCachePolicy,
+    setCacheMitigationStrategy,
+    triggerCacheStampede,
+    invalidateCacheKey,
+    clearCache,
   };
 }
