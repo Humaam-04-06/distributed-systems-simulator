@@ -1,11 +1,15 @@
 /**
- * SimulationEngine — Core orchestrator connecting clock, traffic, queues, and nodes
+ * SimulationEngine — Core orchestrator connecting clock, traffic, queues, LB algorithms, and resilience layers
  */
 
 import { SimulationClock } from './SimulationClock';
 import { TrafficGenerator } from './TrafficGenerator';
 import { QueueBuffer } from './QueueModel';
 import { MetricsAccumulator } from './MetricsAccumulator';
+import { LoadBalancer } from './LoadBalancer';
+import { ConsistentHashRing } from './ConsistentHashRing';
+import { TokenBucketRateLimiter } from './RateLimiter';
+import { HealthChecker } from './HealthChecker';
 import {
   IncidentEvent,
   IncidentSeverity,
@@ -16,6 +20,7 @@ import {
   LoadBalancerNodeState,
   SimulationConfig,
   SimulationMetrics,
+  LoadBalancingAlgorithm,
 } from './types';
 
 export type EngineSubscriber = () => void;
@@ -24,6 +29,10 @@ export class SimulationEngine {
   public clock: SimulationClock;
   public trafficGen: TrafficGenerator;
   public metrics: MetricsAccumulator;
+  public lbRouter: LoadBalancer;
+  public hashRing: ConsistentHashRing;
+  public rateLimiter: TokenBucketRateLimiter;
+  public healthChecker: HealthChecker;
 
   // Cluster Nodes
   public lbNode: LoadBalancerNodeState;
@@ -55,14 +64,25 @@ export class SimulationEngine {
 
   private subscribers: Set<EngineSubscriber> = new Set();
   private nextIncidentId: number = 1;
-  private roundRobinIdx: number = 0;
 
   constructor() {
     this.clock = new SimulationClock(50);
     this.trafficGen = new TrafficGenerator(this.config.targetRps);
     this.metrics = new MetricsAccumulator();
+    this.lbRouter = new LoadBalancer(this.config.lbAlgorithm);
+    this.hashRing = new ConsistentHashRing(32);
+    this.rateLimiter = new TokenBucketRateLimiter({
+      capacity: 1200,
+      refillRateRps: 1000,
+      enabled: true,
+    });
+    this.healthChecker = new HealthChecker({
+      intervalMs: 1500,
+      unhealthyThreshold: 3,
+      healthyThreshold: 2,
+    });
 
-    // 1. Initialize Load Balancer
+    // 1. Initialize Load Balancer Node State
     this.lbNode = {
       id: 'lb-1',
       name: 'Application Load Balancer',
@@ -77,9 +97,9 @@ export class SimulationEngine {
       processedTotal: 0,
       failedTotal: 0,
       rateLimitEnabled: true,
-      rateLimitRps: 1500,
-      tokenBucketTokens: 1500,
-      tokenBucketCapacity: 1500,
+      rateLimitRps: 1200,
+      tokenBucketTokens: 1200,
+      tokenBucketCapacity: 1200,
     };
 
     // 2. Initialize 3 Worker Servers
@@ -110,7 +130,10 @@ export class SimulationEngine {
           concurrencyLimit: server.threadPoolSize,
         })
       );
+      this.healthChecker.registerNode(server.id, true);
     }
+
+    this.hashRing.setNodes(this.serverNodes.map((s) => s.id));
 
     // 3. Initialize Cache Node
     this.cacheNode = {
@@ -182,10 +205,11 @@ export class SimulationEngine {
     this.notify();
   }
 
-  public setLbAlgorithm(algo: LoadBalancerNodeState['algorithm']): void {
+  public setLbAlgorithm(algo: LoadBalancingAlgorithm): void {
     this.config.lbAlgorithm = algo;
     this.lbNode.algorithm = algo;
-    this.addIncident('info', 'lb-1', `Switched routing algorithm to ${algo}`);
+    this.lbRouter.setAlgorithm(algo);
+    this.addIncident('info', 'lb-1', `Switched routing algorithm to ${algo.replace('-', ' ')}`);
     this.notify();
   }
 
@@ -196,14 +220,16 @@ export class SimulationEngine {
     if (server.health === 'crashed') {
       server.health = 'healthy';
       server.cpuLoad = 10;
-      this.addIncident('info', server.id, `Server ${index + 1} recovered and returned to pool.`);
+      this.hashRing.addNode(server.id);
+      this.addIncident('info', server.id, `${server.name} recovered and returned to active pool.`);
     } else {
       server.health = 'crashed';
       server.cpuLoad = 0;
       server.activeConnections = 0;
       server.queueDepth = 0;
+      this.hashRing.removeNode(server.id);
       this.serverQueues.get(server.id)?.clear();
-      this.addIncident('error', server.id, `Server ${index + 1} crashed! Health probe failed.`);
+      this.addIncident('error', server.id, `${server.name} crashed! Ejected from active pool.`);
     }
     this.notify();
   }
@@ -252,11 +278,28 @@ export class SimulationEngine {
     // 1. Generate incoming client packets
     const newPackets = this.trafficGen.generateTickPackets(deltaMs);
 
-    // 2. Route packets through LB to healthy servers
+    // 2. Health check monitoring
+    this.healthChecker.tick(this.serverNodes, (server, isHealthy) => {
+      if (!isHealthy && server.health === 'healthy') {
+        server.health = 'degraded';
+        this.addIncident('warn', server.id, `${server.name} probe degraded! High latency.`);
+      }
+    });
+
+    // 3. Rate limiting check at Ingress
     const aliveServers = this.serverNodes.filter((s) => s.health !== 'crashed');
 
     for (const packet of newPackets) {
-      // Packet loss check
+      // Ingress Token Bucket rate limiting
+      const limitResult = this.rateLimiter.tryConsume(1);
+      if (!limitResult.allowed) {
+        packet.status = 'rate_limited_429';
+        packet.totalLatencyMs = 8;
+        this.metrics.recordCompleted(packet);
+        continue;
+      }
+
+      // Simulated network packet loss
       if (Math.random() * 100 < this.config.packetLossPercentage) {
         packet.status = 'timeout_504';
         packet.totalLatencyMs = this.config.networkLatencyMs * 4;
@@ -264,7 +307,7 @@ export class SimulationEngine {
         continue;
       }
 
-      // If all servers dead or DB down on write
+      // All servers dead
       if (aliveServers.length === 0) {
         packet.status = 'error_500';
         packet.totalLatencyMs = this.config.networkLatencyMs * 2;
@@ -272,16 +315,23 @@ export class SimulationEngine {
         continue;
       }
 
-      // Route via algorithm
-      let targetServer: ServerNodeState;
-      if (this.lbNode.algorithm === 'least-connections') {
-        targetServer = [...aliveServers].sort(
-          (a, b) => a.activeConnections - b.activeConnections
-        )[0];
+      // Route via Load Balancer Router
+      let targetServer: ServerNodeState | null = null;
+      if (this.lbNode.algorithm === 'consistent-hash') {
+        const ringResult = this.hashRing.getNode(packet.id);
+        if (ringResult.nodeId) {
+          targetServer = aliveServers.find((s) => s.id === ringResult.nodeId) || aliveServers[0];
+        } else {
+          targetServer = aliveServers[0];
+        }
       } else {
-        // Round Robin
-        this.roundRobinIdx = (this.roundRobinIdx + 1) % aliveServers.length;
-        targetServer = aliveServers[this.roundRobinIdx];
+        targetServer = this.lbRouter.route(aliveServers, `client-ip-${packet.id}`);
+      }
+
+      if (!targetServer) {
+        packet.status = 'error_500';
+        this.metrics.recordCompleted(packet);
+        continue;
       }
 
       packet.targetServerId = targetServer.id;
@@ -298,7 +348,10 @@ export class SimulationEngine {
       }
     }
 
-    // 3. Process queues across all servers
+    // Update LB Node Token Bucket visual state
+    this.lbNode.tokenBucketTokens = this.rateLimiter.getTokens();
+
+    // 4. Process queues across all servers
     for (const server of this.serverNodes) {
       if (server.health === 'crashed') continue;
 
@@ -306,19 +359,18 @@ export class SimulationEngine {
       if (!queue) continue;
 
       queue.step(deltaMs, (completedPacket) => {
-        // Check cache hit if read
         let extraLatency = this.config.networkLatencyMs;
         if (completedPacket.type === 'read' && this.config.cacheEnabled) {
           completedPacket.cacheHit = Math.random() < 0.88;
           if (completedPacket.cacheHit) {
             this.cacheNode.hitCount++;
-            extraLatency += 2; // Fast cache hit
+            extraLatency += 2; // Cache hit
           } else {
             this.cacheNode.missCount++;
-            extraLatency += 25; // DB lookup
+            extraLatency += 25; // Cache miss -> DB lookup
           }
         } else {
-          // Write or cache disabled -> hits DB
+          // Write or cache bypassed
           if (this.dbNode.health === 'crashed') {
             completedPacket.status = 'error_500';
             completedPacket.totalLatencyMs = extraLatency + 200;
@@ -343,16 +395,15 @@ export class SimulationEngine {
       server.activeConnections = queue.getActiveProcessingCount();
       server.cpuLoad = Math.min(99, Math.round(qm.utilizationRho * 100));
 
-      // Trigger automatic warning incidents on high load
       if (server.cpuLoad > 90 && Math.random() < 0.05) {
-        this.addIncident('warn', server.id, `${server.name} CPU utilization exceeded 90%!`);
+        this.addIncident('warn', server.id, `${server.name} CPU load exceeded 90%!`);
       }
     }
 
-    // 4. Update Metrics
+    // 5. Update Metrics
     this.metrics.tick(now, aliveServers.length);
 
-    // 5. Notify UI subscribers
+    // 6. Notify UI subscribers
     this.notify();
   }
 
@@ -364,6 +415,7 @@ export class SimulationEngine {
     this.clock.reset();
     this.trafficGen.reset();
     this.metrics.reset();
+    this.rateLimiter.reset();
     this.serverNodes.forEach((s) => {
       s.health = 'healthy';
       s.cpuLoad = 10;
@@ -371,6 +423,7 @@ export class SimulationEngine {
       s.queueDepth = 0;
     });
     this.serverQueues.forEach((q) => q.clear());
+    this.hashRing.setNodes(this.serverNodes.map((s) => s.id));
     this.dbNode.health = 'healthy';
     this.activePackets = [];
     this.incidents = [];
