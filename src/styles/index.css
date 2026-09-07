@@ -4,60 +4,53 @@
 
 @layer base {
   :root {
-    --bg-main: #090a0f;
-    --surface-card: #11141d;
-    --surface-elevated: #171b28;
-    --border-card: #212638;
-    --border-subtle: #181d2a;
-    --text-primary: #f8fafc;
-    --text-secondary: #94a3b8;
-    --text-muted: #64748b;
+    --bg-main: #0d1b2a;
+    --surface-card: #1b263b;
+    --surface-elevated: #223049;
+    --border-card: #415a77;
+    --border-subtle: #2d3e58;
+    --text-primary: #e0e1dd;
+    --text-secondary: #778da9;
+    --text-muted: #5c728e;
   }
 
   body {
-    background-color: var(--bg-main);
-    color: var(--text-primary);
+    background-color: #0d1b2a;
+    color: #e0e1dd;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     overflow-x: hidden;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
+
+  ::selection {
+    background-color: #415a77;
+    color: #e0e1dd;
+  }
 }
 
-/* Subtle Modern Dark Grid */
+/* Elegant Navy Grid */
 .modern-grid {
   background-image: 
-    linear-gradient(to right, rgba(33, 38, 56, 0.25) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(33, 38, 56, 0.25) 1px, transparent 1px);
+    linear-gradient(to right, rgba(65, 90, 119, 0.15) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(65, 90, 119, 0.15) 1px, transparent 1px);
   background-size: 24px 24px;
 }
 
-/* Enterprise Surface Card */
-.enterprise-card {
-  background-color: #11141d;
-  border: 1px solid #212638;
-  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.4);
-}
-
-.enterprise-card-elevated {
-  background-color: #171b28;
-  border: 1px solid #293046;
-}
-
-/* Sleek Scrollbars */
+/* Scrollbars */
 ::-webkit-scrollbar {
   width: 5px;
   height: 5px;
 }
 ::-webkit-scrollbar-track {
-  background: #090a0f;
+  background: #0d1b2a;
 }
 ::-webkit-scrollbar-thumb {
-  background: #212638;
+  background: #415a77;
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #3b82f6;
+  background: #778da9;
 }
 
 /* Flowing SVG Link Animation */
@@ -69,14 +62,4 @@
 
 .animate-flow-dash {
   animation: flowDash 1s linear infinite;
-}
-
-/* Clean Pulse for Indicators */
-@keyframes pulseGlow {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.5; transform: scale(0.95); }
-}
-
-.pulse-indicator {
-  animation: pulseGlow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }

@@ -5,33 +5,33 @@ export default {
   theme: {
     extend: {
       colors: {
-        background: '#090a0f',
-        surface: {
-          DEFAULT: '#11141d',
-          card: '#131622',
-          elevated: '#171b28',
-          hover: '#1b2030',
-          border: '#212638',
-          'border-subtle': '#181d2a',
+        navy: {
+          950: '#0d1b2a', // Main deep background
+          900: '#1b263b', // Surface / cards / header
+          800: '#23324a', // Elevated surface / hover
+          700: '#415a77', // Borders / dividers / subtle buttons
+          500: '#778da9', // Secondary text / icons / muted accent
+          100: '#e0e1dd', // Platinum / primary text
         },
-        brand: {
-          50: '#eef2ff',
-          100: '#e0e7ff',
-          200: '#c7d2fe',
-          300: '#a5b4fc',
-          400: '#818cf8',
-          500: '#6366f1',
-          600: '#4f46e5',
-          700: '#4338ca',
-          DEFAULT: '#3b82f6',
+        background: '#0d1b2a',
+        surface: {
+          DEFAULT: '#1b263b',
+          card: '#1b263b',
+          elevated: '#223049',
+          hover: '#283956',
+          border: '#415a77',
+          'border-subtle': '#2d3e58',
+        },
+        text: {
+          primary: '#e0e1dd',
+          secondary: '#778da9',
+          muted: '#5c728e',
         },
         status: {
           success: '#10b981',
           warning: '#f59e0b',
-          danger: '#f43f5e',
-          info: '#3b82f6',
-          purple: '#8b5cf6',
-          neutral: '#71717a',
+          danger: '#ef4444',
+          info: '#778da9',
         },
       },
       fontFamily: {
@@ -39,12 +39,8 @@ export default {
         mono: ['JetBrains Mono', 'Fira Code', 'Menlo', 'monospace'],
       },
       boxShadow: {
-        subtle: '0 1px 3px 0 rgba(0, 0, 0, 0.3), 0 1px 2px -1px rgba(0, 0, 0, 0.3)',
-        card: '0 4px 20px -2px rgba(0, 0, 0, 0.5)',
-        'glow-blue': '0 0 20px -5px rgba(59, 130, 246, 0.25)',
-        'glow-emerald': '0 0 20px -5px rgba(16, 185, 129, 0.25)',
-        'glow-rose': '0 0 20px -5px rgba(244, 63, 94, 0.25)',
-        'glow-amber': '0 0 20px -5px rgba(245, 158, 11, 0.25)',
+        card: '0 4px 20px -2px rgba(13, 27, 42, 0.7)',
+        elevated: '0 8px 30px -4px rgba(13, 27, 42, 0.9)',
       },
     },
   },
