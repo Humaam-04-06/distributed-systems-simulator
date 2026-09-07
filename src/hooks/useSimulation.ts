@@ -23,6 +23,8 @@ import {
 } from '../engine/ThreadPoolBulkhead';
 import { ConnectionPoolMetrics } from '../engine/ConnectionPoolBulkhead';
 import { TenantQuota, TenantTier } from '../engine/TenantBulkheadQuarantine';
+import { Trace } from '../engine/DistributedTracer';
+import { TelemetrySnapshot } from '../engine/OpenTelemetryExporter';
 import {
   IncidentEvent,
   ServerNodeState,
@@ -99,6 +101,16 @@ export function useSimulation() {
   const [isNoisyNeighborActive, setIsNoisyNeighborActive] = useState<boolean>(
     engine.isNoisyNeighborSurgeActive()
   );
+  const [traces, setTraces] = useState<Trace[]>(engine.getRecentTraces());
+  const [telemetrySnapshot, setTelemetrySnapshot] = useState<TelemetrySnapshot>(
+    engine.getTelemetrySnapshot()
+  );
+  const [prometheusText, setPrometheusText] = useState<string>(
+    engine.getPrometheusMetricsText()
+  );
+  const [otlpJson, setOtlpJson] = useState<string>(engine.getOTLPJson());
+  const [selectedTrace, setSelectedTrace] = useState<Trace | null>(null);
+  const [isTraceModalOpen, setIsTraceModalOpen] = useState<boolean>(false);
 
   // Subscribe to engine tick notifications
   useEffect(() => {
@@ -129,6 +141,10 @@ export function useSimulation() {
       setConnPoolMetrics({ ...engine.getConnectionPoolMetrics() });
       setTenantQuotas([...engine.getTenantQuotas()]);
       setIsNoisyNeighborActive(engine.isNoisyNeighborSurgeActive());
+      setTraces([...engine.getRecentTraces()]);
+      setTelemetrySnapshot(engine.getTelemetrySnapshot());
+      setPrometheusText(engine.getPrometheusMetricsText());
+      setOtlpJson(engine.getOTLPJson());
     });
 
     // Start simulation clock
@@ -408,6 +424,24 @@ export function useSimulation() {
     engine.resetBulkheads();
   }, [engine]);
 
+  const selectTrace = useCallback((trace: Trace | null) => {
+    setSelectedTrace(trace);
+  }, []);
+
+  const openTraceModal = useCallback((trace?: Trace) => {
+    if (trace) setSelectedTrace(trace);
+    setIsTraceModalOpen(true);
+  }, []);
+
+  const closeTraceModal = useCallback(() => {
+    setIsTraceModalOpen(false);
+  }, []);
+
+  const clearTraces = useCallback(() => {
+    engine.clearTraces();
+    setSelectedTrace(null);
+  }, [engine]);
+
   return {
     isRunning,
     speed,
@@ -438,6 +472,12 @@ export function useSimulation() {
     connPoolMetrics,
     tenantQuotas,
     isNoisyNeighborActive,
+    traces,
+    telemetrySnapshot,
+    prometheusText,
+    otlpJson,
+    selectedTrace,
+    isTraceModalOpen,
     toggleRunning,
     setSpeed,
     reset,
@@ -480,5 +520,9 @@ export function useSimulation() {
     toggleTenantQuarantine,
     triggerNoisyNeighborSurge,
     resetBulkheads,
+    selectTrace,
+    openTraceModal,
+    closeTraceModal,
+    clearTraces,
   };
 }

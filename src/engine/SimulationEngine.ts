@@ -40,6 +40,8 @@ import {
   TenantQuota,
   TenantTier,
 } from './TenantBulkheadQuarantine';
+import { DistributedTracer, Trace } from './DistributedTracer';
+import { OpenTelemetryExporter, TelemetrySnapshot } from './OpenTelemetryExporter';
 import {
   IncidentEvent,
   IncidentSeverity,
@@ -78,6 +80,8 @@ export class SimulationEngine {
   public threadBulkhead: ThreadPoolBulkhead;
   public connBulkhead: ConnectionPoolBulkhead;
   public tenantBulkhead: TenantBulkheadQuarantine;
+  public tracer: DistributedTracer;
+  public otelExporter: OpenTelemetryExporter;
 
   // Cluster Nodes
   public lbNode: LoadBalancerNodeState;
@@ -141,6 +145,8 @@ export class SimulationEngine {
     this.threadBulkhead = new ThreadPoolBulkhead();
     this.connBulkhead = new ConnectionPoolBulkhead();
     this.tenantBulkhead = new TenantBulkheadQuarantine();
+    this.tracer = new DistributedTracer();
+    this.otelExporter = new OpenTelemetryExporter();
 
     // 1. Initialize Load Balancer Node State
     this.lbNode = {
@@ -703,12 +709,23 @@ export class SimulationEngine {
         }
       }
 
+      const route =
+        domain === 'checkout'
+          ? '/api/v1/checkout'
+          : domain === 'catalog'
+          ? '/api/v1/catalog'
+          : '/api/v1/analytics';
+
+      const { traceId, rootSpanId } = this.tracer.startTrace(route, tenantTier, now);
+
       // 3.2 Multi-tenant quota quarantine check
       const tenantCheck = this.tenantBulkhead.tryAcquire(tenantTier);
       if (!tenantCheck.accepted) {
         packet.status = 'rate_limited_429';
         packet.totalLatencyMs = 4;
         this.metrics.recordCompleted(packet);
+        this.tracer.addEvent(traceId, rootSpanId, 'tenant_quota_exceeded', { tenantTier }, now);
+        this.tracer.endTrace(traceId, 429, now);
         continue;
       }
 
@@ -719,6 +736,8 @@ export class SimulationEngine {
         packet.status = 'circuit_broken_503';
         packet.totalLatencyMs = 4;
         this.metrics.recordCompleted(packet);
+        this.tracer.addEvent(traceId, rootSpanId, 'bulkhead_thread_pool_exhausted', { domain }, now);
+        this.tracer.endTrace(traceId, 503, now);
         continue;
       }
 
@@ -733,14 +752,85 @@ export class SimulationEngine {
           if (fallback.served) {
             packet.status = 'success_200';
             packet.totalLatencyMs = fallback.latencyMs;
+            this.tracer.addEvent(traceId, rootSpanId, 'fallback_executed', { fallbackServed: true }, now);
+            this.tracer.endTrace(traceId, 200, now + fallback.latencyMs);
           } else {
             packet.status = 'circuit_broken_503';
             packet.totalLatencyMs = 2; // Fast-fail in 2ms!
+            this.tracer.addEvent(traceId, rootSpanId, 'circuit_broken_fast_fail', { server: targetServer.id }, now);
+            this.tracer.endTrace(traceId, 503, now + 2);
           }
           this.metrics.recordCompleted(packet);
           continue;
         }
       }
+
+      // Trace Spans for successful pipeline
+      const cacheHit =
+        packet.type === 'read' &&
+        this.config.cacheEnabled &&
+        Math.random() <
+          this.cacheNode.hitCount / Math.max(1, this.cacheNode.hitCount + this.cacheNode.missCount);
+
+      const cacheSpan = this.tracer.startSpan(
+        traceId,
+        'cache:lookup',
+        rootSpanId,
+        'CLIENT',
+        {
+          'cache.hit': cacheHit,
+          'cluster.node_id': 'redis-cluster-01',
+        },
+        now
+      );
+      this.tracer.endSpan(traceId, cacheSpan.spanId, 'OK', undefined, now + 2);
+
+      const bhSpan = this.tracer.startSpan(
+        traceId,
+        'bulkhead:acquire',
+        rootSpanId,
+        'INTERNAL',
+        {
+          'bulkhead.domain': domain,
+        },
+        now + 2
+      );
+      this.tracer.endSpan(traceId, bhSpan.spanId, 'OK', undefined, now + 4);
+
+      const computeDuration = Math.max(
+        6,
+        Math.round(this.config.networkLatencyMs * (0.6 + Math.random() * 0.8))
+      );
+      const computeSpan = this.tracer.startSpan(
+        traceId,
+        'worker:compute',
+        rootSpanId,
+        'SERVER',
+        {
+          'cluster.node_id': targetServer.id,
+          'http.status_code': 200,
+        },
+        now + 4
+      );
+
+      if (packet.type === 'write') {
+        const dbSpan = this.tracer.startSpan(
+          traceId,
+          'database:wal',
+          computeSpan.spanId,
+          'CLIENT',
+          {
+            'db.system': 'postgres',
+            'db.statement': 'INSERT INTO transactions (id, status) VALUES ($1, $2)',
+            'cluster.node_id': 'db-primary',
+          },
+          now + 6
+        );
+        this.tracer.endSpan(traceId, dbSpan.spanId, 'OK', undefined, now + 14);
+      }
+
+      this.tracer.endSpan(traceId, computeSpan.spanId, 'OK', undefined, now + 4 + computeDuration);
+      this.tracer.endTrace(traceId, 200, now + 4 + computeDuration);
 
       packet.targetServerId = targetServer.id;
       const queue = this.serverQueues.get(targetServer.id);
@@ -1166,6 +1256,53 @@ export class SimulationEngine {
     this.notify();
   }
 
+  public getTelemetrySnapshot(): TelemetrySnapshot {
+    const snap = this.metrics.getSnapshot();
+    const bulkheadThreads: Record<string, number> = {};
+    for (const pool of this.threadBulkhead.getAllPoolMetrics()) {
+      bulkheadThreads[pool.domain] = pool.activeConcurrency;
+    }
+    const anyTripped = this.circuitBreaker.getAllMetrics().some((m) => m.state === 'open');
+    const cacheTotal = this.cacheNode.hitCount + this.cacheNode.missCount;
+    const cacheHitRatio = cacheTotal > 0 ? (this.cacheNode.hitCount / cacheTotal) * 100 : 100;
+
+    return {
+      throughputRps: snap.currentRps,
+      totalRequests: snap.totalProcessed + snap.totalErrors,
+      successfulRequests: snap.totalProcessed,
+      rateLimited429Requests: snap.totalRateLimited,
+      circuitBroken503Requests: snap.totalCircuitBroken,
+      timeout504Requests: Math.round(snap.totalErrors * 0.1),
+      serverError500Requests: Math.max(0, snap.totalErrors - snap.totalRateLimited - snap.totalCircuitBroken),
+      p50LatencyMs: snap.latencies.p50,
+      p90LatencyMs: snap.latencies.p90,
+      p95LatencyMs: snap.latencies.p95,
+      p99LatencyMs: snap.latencies.p99,
+      avgLatencyMs: snap.latencies.avg,
+      activeServers: this.serverNodes.filter((s) => s.health !== 'crashed').length,
+      cacheHitRatio,
+      bulkheadThreads,
+      circuitBreakerTripped: anyTripped,
+    };
+  }
+
+  public getRecentTraces(limit: number = 60): Trace[] {
+    return this.tracer.getRecentTraces(limit);
+  }
+
+  public getPrometheusMetricsText(): string {
+    return this.otelExporter.generatePrometheusText(this.getTelemetrySnapshot());
+  }
+
+  public getOTLPJson(): string {
+    return this.otelExporter.generateOTLPPayload(this.tracer.getRecentTraces(15));
+  }
+
+  public clearTraces(): void {
+    this.tracer.clear();
+    this.notify();
+  }
+
   public getMetricsSnapshot(): SimulationMetrics {
     return this.metrics.getSnapshot();
   }
@@ -1177,6 +1314,7 @@ export class SimulationEngine {
     this.rateLimiter.reset();
     this.resetResilience();
     this.resetBulkheads();
+    this.clearTraces();
     this.serverNodes.forEach((s) => {
       s.health = 'healthy';
       s.cpuLoad = 10;

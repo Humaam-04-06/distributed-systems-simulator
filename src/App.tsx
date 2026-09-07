@@ -22,6 +22,7 @@ import {
   CheckCircle2,
   Disc3,
   Anchor,
+  BarChart3,
 } from 'lucide-react';
 import { LoadBalancingAlgorithm } from './engine/types';
 import { ServerClusterGrid } from './components/nodes/ServerClusterGrid';
@@ -29,7 +30,10 @@ import { DatabaseClusterView } from './components/database/DatabaseClusterView';
 import { CacheClusterView } from './components/cache/CacheClusterView';
 import { CascadingFailurePanel } from './components/resilience/CascadingFailurePanel';
 import { BulkheadClusterView } from './components/bulkhead/BulkheadClusterView';
+import { TraceWaterfallViewer } from './components/telemetry/TraceWaterfallViewer';
+import { TelemetryMetricsConsole } from './components/telemetry/TelemetryMetricsConsole';
 import { CircuitBreakerModal } from './components/modals/CircuitBreakerModal';
+import { TraceInspectorModal } from './components/modals/TraceInspectorModal';
 
 export const App: React.FC = () => {
   const {
@@ -104,13 +108,23 @@ export const App: React.FC = () => {
     toggleTenantQuarantine,
     triggerNoisyNeighborSurge,
     resetBulkheads,
+    traces,
+    telemetrySnapshot,
+    prometheusText,
+    otlpJson,
+    selectedTrace,
+    isTraceModalOpen,
+    selectTrace,
+    openTraceModal,
+    closeTraceModal,
+    clearTraces,
   } = useSimulation();
 
   const [chaosActive, setChaosActive] = useState<boolean>(false);
   const [isHashRingOpen, setIsHashRingOpen] = useState<boolean>(false);
   const [isCircuitModalOpen, setIsCircuitModalOpen] = useState<boolean>(false);
   const [centerTab, setCenterTab] = useState<
-    'topology' | 'cluster' | 'database' | 'cache' | 'resilience' | 'bulkhead'
+    'topology' | 'cluster' | 'database' | 'cache' | 'resilience' | 'bulkhead' | 'telemetry'
   >('topology');
 
   const activeServers = serverNodes.filter((s) => s.health !== 'crashed').length;
@@ -445,6 +459,20 @@ export const App: React.FC = () => {
                   </span>
                 )}
               </button>
+              <button
+                onClick={() => setCenterTab('telemetry')}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  centerTab === 'telemetry'
+                    ? 'bg-[#415a77] text-[#e0e1dd] shadow font-semibold'
+                    : 'text-[#778da9] hover:text-[#e0e1dd]'
+                }`}
+              >
+                <BarChart3 className="w-3.5 h-3.5 text-cyan-300" />
+                Traces & OpenTelemetry
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#0d1b2a] text-cyan-300 font-mono font-semibold">
+                  {traces.length} TRACES
+                </span>
+              </button>
             </div>
           </div>
 
@@ -515,6 +543,21 @@ export const App: React.FC = () => {
               onTriggerNoisyNeighborSurge={triggerNoisyNeighborSurge}
               onResetBulkheads={resetBulkheads}
             />
+          ) : centerTab === 'telemetry' ? (
+            <div className="flex flex-col space-y-4">
+              <TraceWaterfallViewer
+                traces={traces}
+                selectedTrace={selectedTrace}
+                onSelectTrace={selectTrace}
+                onInspectTrace={(t) => openTraceModal(t)}
+                onClearTraces={clearTraces}
+              />
+              <TelemetryMetricsConsole
+                snapshot={telemetrySnapshot}
+                prometheusText={prometheusText}
+                otlpJson={otlpJson}
+              />
+            </div>
           ) : (
             <Card
               className="flex-1 min-h-[580px] relative overflow-hidden"
@@ -1010,6 +1053,13 @@ export const App: React.FC = () => {
         onUpdateConfig={updateCircuitBreakerConfig}
         onForceTrip={() => forceTripCircuit('server-1')}
         onForceReset={() => forceResetCircuit('server-1')}
+      />
+
+      {/* OpenTelemetry Trace Inspector Modal */}
+      <TraceInspectorModal
+        isOpen={isTraceModalOpen}
+        onClose={closeTraceModal}
+        trace={selectedTrace}
       />
     </div>
   );
