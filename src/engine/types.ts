@@ -80,7 +80,7 @@ export interface CacheNodeState extends BaseNode {
   missCount: number;
   totalKeys: number;
   maxKeys: number;
-  evictionPolicy: 'lru' | 'lfu';
+  evictionPolicy: 'lru' | 'lfu' | 'fifo';
 }
 
 export type LoadBalancingAlgorithm =

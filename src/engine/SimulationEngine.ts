@@ -16,6 +16,9 @@ import { WatchdogSupervisor } from './WatchdogSupervisor';
 import { DatabaseReplicationEngine, DatabaseNode, ReplicationMode } from './DatabaseReplicationEngine';
 import { FailoverElectionManager } from './FailoverElectionManager';
 import { WriteConflictDetector, WriteConflict } from './WriteConflictDetector';
+import { CacheEvictionEngine, CacheEntry, CacheMetrics, EvictionPolicy } from './CacheEvictionEngine';
+import { CacheStampedeSimulator, StampedeEvent } from './CacheStampedeSimulator';
+import { CacheMitigationManager, StampedeMitigationStrategy } from './CacheMitigationManager';
 import {
   IncidentEvent,
   IncidentSeverity,
@@ -45,6 +48,9 @@ export class SimulationEngine {
   public dbReplication: DatabaseReplicationEngine;
   public failoverElection: FailoverElectionManager;
   public conflictDetector: WriteConflictDetector;
+  public cacheEngine: CacheEvictionEngine;
+  public stampedeSim: CacheStampedeSimulator;
+  public cacheMitigation: CacheMitigationManager;
 
   // Cluster Nodes
   public lbNode: LoadBalancerNodeState;
@@ -99,6 +105,9 @@ export class SimulationEngine {
     this.dbReplication = new DatabaseReplicationEngine();
     this.failoverElection = new FailoverElectionManager(this.dbReplication);
     this.conflictDetector = new WriteConflictDetector();
+    this.cacheEngine = new CacheEvictionEngine(24, 'lru');
+    this.stampedeSim = new CacheStampedeSimulator();
+    this.cacheMitigation = new CacheMitigationManager();
 
     // 1. Initialize Load Balancer Node State
     this.lbNode = {
@@ -453,6 +462,69 @@ export class SimulationEngine {
     }
   }
 
+  public getCacheMetrics(): CacheMetrics {
+    return this.cacheEngine.getMetrics();
+  }
+
+  public getCacheEntries(): CacheEntry[] {
+    return this.cacheEngine.getEntries();
+  }
+
+  public getCachePolicy(): EvictionPolicy {
+    return this.cacheEngine.getPolicy();
+  }
+
+  public setCachePolicy(policy: EvictionPolicy): void {
+    this.cacheEngine.setPolicy(policy);
+    this.addIncident('info', 'cache-1', `Eviction policy changed to ${policy.toUpperCase()}.`);
+    this.notify();
+  }
+
+  public getCacheMitigationStrategy(): StampedeMitigationStrategy {
+    return this.cacheMitigation.getStrategy();
+  }
+
+  public setCacheMitigationStrategy(strategy: StampedeMitigationStrategy): void {
+    this.cacheMitigation.setStrategy(strategy);
+    this.addIncident(
+      'info',
+      'cache-1',
+      `Cache stampede mitigation set to ${strategy.toUpperCase()}.`
+    );
+    this.notify();
+  }
+
+  public triggerCacheStampede(key: string = 'leaderboard:top10'): void {
+    this.cacheEngine.invalidate(key);
+    const event = this.stampedeSim.triggerStampede(
+      key,
+      850,
+      this.cacheMitigation.getStrategy()
+    );
+    this.addIncident(
+      'critical',
+      'cache-1',
+      `Cache Stampede! Key "${key}" expired, ${event.surgeRequestCount} reqs storming DB!`
+    );
+    this.notify();
+  }
+
+  public getActiveStampede(): StampedeEvent | null {
+    return this.stampedeSim.getActiveStampede();
+  }
+
+  public invalidateCacheKey(key: string): void {
+    this.cacheEngine.invalidate(key);
+    this.addIncident('info', 'cache-1', `Key "${key}" manually purged from cache.`);
+    this.notify();
+  }
+
+  public clearCache(): void {
+    this.cacheEngine.clear();
+    this.addIncident('info', 'cache-1', 'Cache storage completely flushed.');
+    this.notify();
+  }
+
   public toggleCache(): void {
     this.config.cacheEnabled = !this.config.cacheEnabled;
     this.addIncident(
@@ -598,13 +670,102 @@ export class SimulationEngine {
         extraLatency = Math.round(extraLatency * latencyMult);
 
         if (completedPacket.type === 'read' && this.config.cacheEnabled) {
-          completedPacket.cacheHit = Math.random() < 0.88;
-          if (completedPacket.cacheHit) {
-            this.cacheNode.hitCount++;
-            extraLatency += 2; // Cache hit
+          const sampleKeys = [
+            'leaderboard:top10',
+            'user:session:1001',
+            'product:sku:9823',
+            'pricing:rules:eu',
+            'api:token:oauth_99',
+            'catalog:categories',
+          ];
+          // 40% of read traffic hits the hot key 'leaderboard:top10'
+          const reqKey =
+            Math.random() < 0.4
+              ? 'leaderboard:top10'
+              : sampleKeys[Math.floor(Math.random() * sampleKeys.length)];
+
+          const activeStampede = this.stampedeSim.getActiveStampede();
+          const isStampedeKey = activeStampede && activeStampede.targetKey === reqKey;
+
+          if (isStampedeKey) {
+            completedPacket.cacheHit = false;
+            const strategy = this.cacheMitigation.getStrategy();
+
+            if (strategy === 'mutex') {
+              const acquired = this.cacheMitigation.tryAcquireMutex(reqKey, server.id, 2000, now);
+              if (acquired) {
+                // First worker queries DB and warms cache
+                const readRes = this.dbReplication.executeRead(true);
+                extraLatency += readRes.isReplica ? 35 : 45;
+                this.cacheEngine.set(
+                  reqKey,
+                  '["alice","bob","charlie","dave"]',
+                  25000,
+                  true,
+                  now
+                );
+                this.cacheMitigation.releaseMutex(reqKey);
+              } else {
+                // Secondary workers wait for single-flight resolution
+                extraLatency += 16;
+              }
+            } else if (strategy === 'xfetch') {
+              // Early recomputation kept key refreshed with minimal overhead
+              extraLatency += 14;
+              this.cacheEngine.set(
+                reqKey,
+                '["alice","bob","charlie","dave"]',
+                25000,
+                true,
+                now
+              );
+            } else {
+              // Unmitigated thundering herd: direct DB hammering with huge latency spike
+              this.dbReplication.executeRead(true);
+              extraLatency += Math.min(
+                450,
+                Math.round(40 * activeStampede.dbPressureMultiplier)
+              );
+            }
           } else {
-            this.cacheNode.missCount++;
-            extraLatency += 25; // Cache miss -> DB lookup
+            // Normal cache path
+            // Check XFetch probabilistic recompute if key exists
+            if (this.cacheMitigation.getStrategy() === 'xfetch') {
+              const entries = this.cacheEngine.getEntries();
+              const existing = entries.find((e) => e.key === reqKey);
+              if (existing && existing.ttlMs > 0) {
+                const ttlRemaining = existing.ttlMs - (now - existing.createdAt);
+                if (this.cacheMitigation.shouldEarlyRecompute(ttlRemaining, 45)) {
+                  this.cacheEngine.set(reqKey, existing.value, 30000, existing.isHotKey, now);
+                }
+              }
+            }
+
+            const cacheLookup = this.cacheEngine.get(reqKey, now);
+            if (cacheLookup.hit) {
+              completedPacket.cacheHit = true;
+              extraLatency += 2; // Sub-2ms in-memory cache hit
+            } else {
+              completedPacket.cacheHit = false;
+              // Cache miss -> read from database
+              const readRes = this.dbReplication.executeRead(true);
+              if (!readRes.success) {
+                completedPacket.status = 'error_500';
+                completedPacket.totalLatencyMs = extraLatency + 200;
+                this.metrics.recordCompleted(completedPacket);
+                return;
+              }
+              extraLatency += readRes.isReplica ? 18 : 28;
+
+              // Populate cache on read miss
+              this.cacheEngine.set(
+                reqKey,
+                `{"entity":"${reqKey}","cached":true}`,
+                30000,
+                reqKey === 'leaderboard:top10',
+                now
+              );
+            }
           }
         } else {
           // Write or cache bypassed (Direct Database Access)
@@ -707,6 +868,28 @@ export class SimulationEngine {
     } else {
       this.dbNode.health = 'crashed';
     }
+
+    // Tick Cache Stampede Simulator
+    const stampedeStatus = this.stampedeSim.tick(now);
+    if (stampedeStatus.targetKey && !stampedeStatus.isActive) {
+      this.addIncident(
+        'info',
+        'cache-1',
+        `Cache Stampede on "${stampedeStatus.targetKey}" has stabilized.`
+      );
+    }
+
+    // Synchronize cacheNode telemetry state
+    const cMetrics = this.cacheEngine.getMetrics();
+    this.cacheNode.hitCount = cMetrics.hitCount;
+    this.cacheNode.missCount = cMetrics.missCount;
+    this.cacheNode.totalKeys = cMetrics.totalEntries;
+    this.cacheNode.maxKeys = cMetrics.maxEntries;
+    this.cacheNode.evictionPolicy = this.cacheEngine.getPolicy();
+    this.cacheNode.cpuLoad = Math.min(
+      100,
+      Math.round((cMetrics.memoryUsedBytes / cMetrics.maxMemoryBytes) * 100)
+    );
 
     // 5. Update Metrics
     this.metrics.tick(now, aliveServers.length);

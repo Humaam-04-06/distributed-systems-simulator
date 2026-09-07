@@ -25,6 +25,7 @@ import {
 import { LoadBalancingAlgorithm } from './engine/types';
 import { ServerClusterGrid } from './components/nodes/ServerClusterGrid';
 import { DatabaseClusterView } from './components/database/DatabaseClusterView';
+import { CacheClusterView } from './components/cache/CacheClusterView';
 
 export const App: React.FC = () => {
   const {
@@ -68,12 +69,23 @@ export const App: React.FC = () => {
     triggerSplitBrain,
     resolveSplitBrain,
     resolveWriteConflicts,
+    cacheMetrics,
+    cacheEntries,
+    cachePolicy,
+    cacheMitigationStrategy,
+    isStampedeActive,
+    activeStampede,
+    setCachePolicy,
+    setCacheMitigationStrategy,
+    triggerCacheStampede,
+    invalidateCacheKey,
+    clearCache,
   } = useSimulation();
 
   const [chaosActive, setChaosActive] = useState<boolean>(false);
   const [circuitBreaker, setCircuitBreaker] = useState<boolean>(true);
   const [isHashRingOpen, setIsHashRingOpen] = useState<boolean>(false);
-  const [centerTab, setCenterTab] = useState<'topology' | 'cluster' | 'database'>('topology');
+  const [centerTab, setCenterTab] = useState<'topology' | 'cluster' | 'database' | 'cache'>('topology');
 
   const activeServers = serverNodes.filter((s) => s.health !== 'crashed').length;
   const totalServers = serverNodes.length;
@@ -345,6 +357,26 @@ export const App: React.FC = () => {
                   </span>
                 )}
               </button>
+              <button
+                onClick={() => setCenterTab('cache')}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  centerTab === 'cache'
+                    ? 'bg-[#415a77] text-[#e0e1dd] shadow font-semibold'
+                    : 'text-[#778da9] hover:text-[#e0e1dd]'
+                }`}
+              >
+                <Radio className="w-3.5 h-3.5 text-cyan-300" />
+                Redis Cache Layer
+                {isStampedeActive ? (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500 text-black font-mono font-bold animate-pulse">
+                    STAMPEDE
+                  </span>
+                ) : (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#0d1b2a] text-cyan-300 font-mono font-semibold">
+                    {cacheMetrics.hitRatioPercentage}% HIT
+                  </span>
+                )}
+              </button>
             </div>
           </div>
 
@@ -374,6 +406,22 @@ export const App: React.FC = () => {
               onTriggerSplitBrain={triggerSplitBrain}
               onResolveSplitBrain={resolveSplitBrain}
               onResolveConflicts={resolveWriteConflicts}
+            />
+          ) : centerTab === 'cache' ? (
+            <CacheClusterView
+              metrics={cacheMetrics}
+              policy={cachePolicy}
+              mitigationStrategy={cacheMitigationStrategy}
+              isStampedeActive={isStampedeActive}
+              activeStampede={activeStampede}
+              entries={cacheEntries}
+              cacheEnabled={config.cacheEnabled}
+              onToggleCacheEnabled={toggleCache}
+              onSetPolicy={setCachePolicy}
+              onSetMitigationStrategy={setCacheMitigationStrategy}
+              onTriggerStampede={triggerCacheStampede}
+              onInvalidateKey={invalidateCacheKey}
+              onClearCache={clearCache}
             />
           ) : (
             <Card
