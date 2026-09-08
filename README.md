@@ -29,8 +29,6 @@
 - [Testing](#-testing)
 - [Production Build](#-production-build)
 - [Release Guide](#-release-guide)
-  - [1. GitHub Release & Git Tagging](#1-github-release--git-tagging)
-  - [2. Deploying to Vercel / Netlify / GitHub Pages](#2-deploying-to-vercel--netlify--github-pages)
 - [Complete 12-Phase Roadmap](#-complete-12-phase-roadmap)
 - [Design Aesthetics](#-design-aesthetics)
 - [Author & License](#-author--license)
@@ -297,8 +295,6 @@ npm run preview
 
 ## 🚢 Release Guide
 
-### 1. GitHub Release & Git Tagging
-
 To publish a formal release on GitHub:
 
 ```bash
@@ -320,30 +316,6 @@ git push origin v1.0.0
 4. Set Release Title: **v1.0.0 — Production Release: Complete 12-Phase Distributed Architecture Simulator**.
 5. Paste the release notes highlighting the 12 phases, 81 tests, and System Design Sandbox.
 6. Click **Publish release**.
-
----
-
-### 2. Deploying to Vercel / Netlify / GitHub Pages
-
-#### Option A: Deploy to Vercel (Recommended — 1-Click)
-1. Go to [Vercel](https://vercel.com/) and click **Add New Project**.
-2. Import the `Distributed_Systems_Simulator` repository.
-3. Keep default settings:
-   - **Framework Preset**: `Vite`
-   - **Build Command**: `npm run build`
-   - **Output Directory**: `dist`
-4. Click **Deploy**. Your app will be live at `https://distributed-systems-simulator.vercel.app`.
-
-#### Option B: Deploy to Netlify
-1. Go to [Netlify](https://www.netlify.com/) and link your repository.
-2. Build command: `npm run build`
-3. Publish directory: `dist`
-4. Click **Deploy**.
-
-#### Option C: Deploy to GitHub Pages
-1. Install `gh-pages`: `npm install -D gh-pages`
-2. Add `"deploy": "gh-pages -d dist"` to `package.json`.
-3. Run `npm run build && npm run deploy`.
 
 ---
 
