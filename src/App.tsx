@@ -25,6 +25,7 @@ import {
   BarChart3,
   FlaskConical,
   Globe,
+  GraduationCap,
 } from 'lucide-react';
 import { LoadBalancingAlgorithm } from './engine/types';
 import { ServerClusterGrid } from './components/nodes/ServerClusterGrid';
@@ -41,6 +42,12 @@ import { ByzantineTraitorPanel } from './components/chaos/ByzantineTraitorPanel'
 import { ChaosExperimentConsole } from './components/chaos/ChaosExperimentConsole';
 import { GlobalRegionMapView } from './components/geo/GlobalRegionMapView';
 import { GeoRoutingPolicyControl } from './components/geo/GeoRoutingPolicyControl';
+import { SystemDesignSandboxView } from './components/interview/SystemDesignSandboxView';
+import { ScenarioCanvasHud } from './components/interview/ScenarioCanvasHud';
+import { ArchitecturePresetLoader } from './components/interview/ArchitecturePresetLoader';
+import { InterviewScratchpadDrawer } from './components/interview/InterviewScratchpadDrawer';
+import { ScenarioBenchmarkModal } from './components/interview/ScenarioBenchmarkModal';
+import { ArchitecturePreset } from './engine/scenarios/ArchitecturePresets';
 
 export const App: React.FC = () => {
   const {
@@ -155,13 +162,27 @@ export const App: React.FC = () => {
     severSubseaCable,
     healSubseaCable,
     healAllMultiRegion,
+    challengeRunner,
+    loadArchitecturePreset,
   } = useSimulation();
 
   const [chaosActive, setChaosActive] = useState<boolean>(false);
   const [isHashRingOpen, setIsHashRingOpen] = useState<boolean>(false);
   const [isCircuitModalOpen, setIsCircuitModalOpen] = useState<boolean>(false);
+  const [isPresetModalOpen, setIsPresetModalOpen] = useState<boolean>(false);
+  const [isScratchpadOpen, setIsScratchpadOpen] = useState<boolean>(false);
+  const [isBenchmarkModalOpen, setIsBenchmarkModalOpen] = useState<boolean>(false);
   const [centerTab, setCenterTab] = useState<
-    'topology' | 'cluster' | 'database' | 'cache' | 'resilience' | 'bulkhead' | 'telemetry' | 'chaos' | 'geo'
+    | 'topology'
+    | 'cluster'
+    | 'database'
+    | 'cache'
+    | 'resilience'
+    | 'bulkhead'
+    | 'telemetry'
+    | 'chaos'
+    | 'geo'
+    | 'interview'
   >('topology');
   const [chaosSubTab, setChaosSubTab] = useState<'scenarios' | 'partitions' | 'byzantine'>('scenarios');
   const [geoSubTab, setGeoSubTab] = useState<'map' | 'policies'>('map');
@@ -187,10 +208,7 @@ export const App: React.FC = () => {
       : '89.4';
 
   const handleOpenDrills = () => {
-    showInfoAlert(
-      'System Design Drills',
-      'System Design Challenge Drills will be loaded in Phase 10 with interactive failure scenarios!'
-    );
+    setCenterTab('interview');
   };
 
   const handleOpenPostMortem = () => {
@@ -550,6 +568,20 @@ export const App: React.FC = () => {
                   {evacuatedRegions.length > 0 ? `${evacuatedRegions.length} EVACUATED` : `${globalRegions.length} REGIONS`}
                 </span>
               </button>
+              <button
+                onClick={() => setCenterTab('interview')}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  centerTab === 'interview'
+                    ? 'bg-amber-950/60 text-amber-300 border border-amber-500/50 shadow font-semibold'
+                    : 'text-[#778da9] hover:text-[#e0e1dd]'
+                }`}
+              >
+                <GraduationCap className="w-3.5 h-3.5 text-amber-400" />
+                Interview Sandbox
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#0d1b2a] text-amber-300 font-mono font-semibold">
+                  STAFF TIER
+                </span>
+              </button>
             </div>
           </div>
 
@@ -774,6 +806,13 @@ export const App: React.FC = () => {
                 />
               )}
             </div>
+          ) : centerTab === 'interview' ? (
+            <div className="flex flex-col space-y-4">
+              <SystemDesignSandboxView
+                onLoadPreset={() => setIsPresetModalOpen(true)}
+                onNavigateCanvas={() => setCenterTab('topology')}
+              />
+            </div>
           ) : (
             <Card
               className="flex-1 min-h-[580px] relative overflow-hidden"
@@ -797,6 +836,15 @@ export const App: React.FC = () => {
                 </div>
               }
             >
+            {/* Scenario Canvas Floating HUD */}
+            <ScenarioCanvasHud
+              scenario={challengeRunner.getActiveScenario()}
+              onOpenPresets={() => setIsPresetModalOpen(true)}
+              onOpenHints={() => setCenterTab('interview')}
+              onOpenCalculator={() => setCenterTab('interview')}
+              onRunEvaluation={() => setCenterTab('interview')}
+            />
+
             {/* SVG Connector Conduit Paths Layer */}
             <div className="relative w-full h-full min-h-[520px] flex flex-col items-center justify-between p-4 select-none">
               <svg className="absolute inset-0 w-full h-full pointer-events-none z-0">
@@ -1276,6 +1324,30 @@ export const App: React.FC = () => {
         isOpen={isTraceModalOpen}
         onClose={closeTraceModal}
         trace={selectedTrace}
+      />
+
+      {/* System Design Blueprint Loader Modal */}
+      <ArchitecturePresetLoader
+        isOpen={isPresetModalOpen}
+        scenarioId={challengeRunner.getActiveScenario().id}
+        onClose={() => setIsPresetModalOpen(false)}
+        onSelectPreset={(preset: ArchitecturePreset) => {
+          loadArchitecturePreset(preset.id);
+        }}
+      />
+
+      {/* Candidate Notes / Scratchpad Drawer */}
+      <InterviewScratchpadDrawer
+        isOpen={isScratchpadOpen}
+        scenarioId={challengeRunner.getActiveScenario().id}
+        onClose={() => setIsScratchpadOpen(false)}
+      />
+
+      {/* Automated Scenario Stress Benchmark Modal */}
+      <ScenarioBenchmarkModal
+        isOpen={isBenchmarkModalOpen}
+        scenarioId={challengeRunner.getActiveScenario().id}
+        onClose={() => setIsBenchmarkModalOpen(false)}
       />
     </div>
   );
