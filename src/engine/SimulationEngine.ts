@@ -59,6 +59,16 @@ import {
   ChaosExperimentState,
 } from './ChaosExperimentRunner';
 import {
+  RegionId,
+  RegionDefinition,
+  GeoRoutingPolicy,
+  SubseaCableId,
+  SubseaCable,
+} from './MultiRegionTypes';
+import { GeoDnsRouter } from './GeoDnsRouter';
+import { MultiRegionLatencyEngine } from './MultiRegionLatencyEngine';
+import { CrossRegionFailoverManager } from './CrossRegionFailoverManager';
+import {
   IncidentEvent,
   IncidentSeverity,
   Packet,
@@ -101,6 +111,9 @@ export class SimulationEngine {
   public partitionMatrix: NetworkPartitionMatrix;
   public byzantineInjector: ByzantineFaultInjector;
   public chaosRunner: ChaosExperimentRunner;
+  public geoDnsRouter: GeoDnsRouter;
+  public multiRegionLatency: MultiRegionLatencyEngine;
+  public crossRegionFailover: CrossRegionFailoverManager;
 
   // Cluster Nodes
   public lbNode: LoadBalancerNodeState;
@@ -273,6 +286,9 @@ export class SimulationEngine {
     this.partitionMatrix = new NetworkPartitionMatrix(allNodeIds);
     this.byzantineInjector = new ByzantineFaultInjector();
     this.chaosRunner = new ChaosExperimentRunner();
+    this.geoDnsRouter = new GeoDnsRouter();
+    this.multiRegionLatency = new MultiRegionLatencyEngine();
+    this.crossRegionFailover = new CrossRegionFailoverManager();
 
     // Bind tick loop
     this.clock.onTick((_tick, deltaMs) => this.onTick(deltaMs));
@@ -1188,6 +1204,13 @@ export class SimulationEngine {
       );
     }
 
+    // 5.2 Tick Cross-Region Failover & Replication
+    this.crossRegionFailover.tick(deltaMs, this.config.targetRps);
+    const crossRegions = this.crossRegionFailover.getRegions();
+    crossRegions.forEach((r) => {
+      this.geoDnsRouter.updateRegion(r);
+    });
+
     // 6. Notify UI subscribers
     this.notify();
   }
@@ -1496,6 +1519,81 @@ export class SimulationEngine {
     this.notify();
   }
 
+  // Multi-Region & Geo-DNS APIs
+  public getGeoRoutingPolicy(): GeoRoutingPolicy {
+    return this.geoDnsRouter.getPolicy();
+  }
+
+  public setGeoRoutingPolicy(policy: GeoRoutingPolicy): void {
+    this.geoDnsRouter.setPolicy(policy);
+    this.addIncident('info', 'lb-1', `Geo-DNS routing policy switched to [${policy.toUpperCase()}].`);
+    this.notify();
+  }
+
+  public getGlobalRegions(): RegionDefinition[] {
+    return this.crossRegionFailover.getRegions();
+  }
+
+  public getSubseaCables(): SubseaCable[] {
+    return this.multiRegionLatency.getCables();
+  }
+
+  public getPrimaryRegionId(): RegionId {
+    return this.crossRegionFailover.getPrimaryRegionId();
+  }
+
+  public getEvacuatedRegions(): RegionId[] {
+    return this.crossRegionFailover.getEvacuatedRegions();
+  }
+
+  public getSeveredCables(): SubseaCableId[] {
+    return this.multiRegionLatency.getSeveredCableIds();
+  }
+
+  public evacuateRegion(regionId: RegionId): void {
+    this.crossRegionFailover.evacuateRegion(regionId);
+    this.addIncident('critical', 'lb-1', `Region [${regionId}] evacuated! Traffic drained.`);
+    this.notify();
+  }
+
+  public restoreRegion(regionId: RegionId): void {
+    this.crossRegionFailover.restoreRegion(regionId);
+    this.addIncident('info', 'lb-1', `Region [${regionId}] restored to active DNS pool.`);
+    this.notify();
+  }
+
+  public promotePrimaryRegion(regionId: RegionId): void {
+    this.crossRegionFailover.promoteNewPrimary(regionId);
+    this.addIncident('critical', 'lb-1', `Primary Region leader promoted to [${regionId}]!`);
+    this.notify();
+  }
+
+  public simulateRegionAzOutage(regionId: RegionId): void {
+    this.crossRegionFailover.simulateAzOutage(regionId);
+    this.addIncident('warn', 'lb-1', `AZ outage injected into [${regionId}].`);
+    this.notify();
+  }
+
+  public severSubseaCable(cableId: SubseaCableId): void {
+    this.multiRegionLatency.severCable(cableId);
+    this.addIncident('warn', 'lb-1', `Subsea fiber cable [${cableId}] severed! WAN rerouted.`);
+    this.notify();
+  }
+
+  public healSubseaCable(cableId: SubseaCableId): void {
+    this.multiRegionLatency.healCable(cableId);
+    this.addIncident('info', 'lb-1', `Subsea fiber cable [${cableId}] repaired.`);
+    this.notify();
+  }
+
+  public healAllMultiRegion(): void {
+    this.multiRegionLatency.healAllCables();
+    const evacuated = this.crossRegionFailover.getEvacuatedRegions();
+    evacuated.forEach((r) => this.crossRegionFailover.restoreRegion(r));
+    this.addIncident('info', 'lb-1', 'All global multi-region infrastructure and fiber cables healed.');
+    this.notify();
+  }
+
   public getMetricsSnapshot(): SimulationMetrics {
     return this.metrics.getSnapshot();
   }
@@ -1511,6 +1609,9 @@ export class SimulationEngine {
     this.partitionMatrix.healAll();
     this.byzantineInjector.reset();
     this.chaosRunner.reset();
+    this.geoDnsRouter.reset();
+    this.multiRegionLatency.healAllCables();
+    this.crossRegionFailover.reset();
     this.serverNodes.forEach((s) => {
       s.health = 'healthy';
       s.cpuLoad = 10;

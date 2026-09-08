@@ -37,6 +37,13 @@ import {
   ChaosExperimentState,
 } from '../engine/ChaosExperimentRunner';
 import {
+  RegionId,
+  RegionDefinition,
+  GeoRoutingPolicy,
+  SubseaCableId,
+  SubseaCable,
+} from '../engine/MultiRegionTypes';
+import {
   IncidentEvent,
   ServerNodeState,
   DatabaseNodeState,
@@ -150,6 +157,26 @@ export function useSimulation() {
     engine.getChaosScenarios()
   );
 
+  // Multi-Region & Geo-DNS State
+  const [globalRegions, setGlobalRegions] = useState<RegionDefinition[]>(
+    engine.getGlobalRegions()
+  );
+  const [subseaCables, setSubseaCables] = useState<SubseaCable[]>(
+    engine.getSubseaCables()
+  );
+  const [geoRoutingPolicy, setGeoRoutingPolicyState] = useState<GeoRoutingPolicy>(
+    engine.getGeoRoutingPolicy()
+  );
+  const [primaryRegionId, setPrimaryRegionId] = useState<RegionId>(
+    engine.getPrimaryRegionId()
+  );
+  const [evacuatedRegions, setEvacuatedRegions] = useState<RegionId[]>(
+    engine.getEvacuatedRegions()
+  );
+  const [severedCables, setSeveredCables] = useState<SubseaCableId[]>(
+    engine.getSeveredCables()
+  );
+
   // Subscribe to engine tick notifications
   useEffect(() => {
     const unsub = engine.subscribe(() => {
@@ -189,6 +216,12 @@ export function useSimulation() {
       setByzantineEvents([...engine.getByzantineEvents()]);
       setChaosState({ ...engine.getChaosState() });
       setChaosScenarios([...engine.getChaosScenarios()]);
+      setGlobalRegions([...engine.getGlobalRegions()]);
+      setSubseaCables([...engine.getSubseaCables()]);
+      setGeoRoutingPolicyState(engine.getGeoRoutingPolicy());
+      setPrimaryRegionId(engine.getPrimaryRegionId());
+      setEvacuatedRegions([...engine.getEvacuatedRegions()]);
+      setSeveredCables([...engine.getSeveredCables()]);
     });
 
     // Start simulation clock
@@ -544,6 +577,60 @@ export function useSimulation() {
     engine.stopChaosScenario();
   }, [engine]);
 
+  const setGeoRoutingPolicy = useCallback(
+    (policy: GeoRoutingPolicy) => {
+      engine.setGeoRoutingPolicy(policy);
+      setGeoRoutingPolicyState(policy);
+    },
+    [engine]
+  );
+
+  const evacuateRegion = useCallback(
+    (regionId: RegionId) => {
+      engine.evacuateRegion(regionId);
+    },
+    [engine]
+  );
+
+  const restoreRegion = useCallback(
+    (regionId: RegionId) => {
+      engine.restoreRegion(regionId);
+    },
+    [engine]
+  );
+
+  const promotePrimaryRegion = useCallback(
+    (regionId: RegionId) => {
+      engine.promotePrimaryRegion(regionId);
+    },
+    [engine]
+  );
+
+  const simulateRegionAzOutage = useCallback(
+    (regionId: RegionId) => {
+      engine.simulateRegionAzOutage(regionId);
+    },
+    [engine]
+  );
+
+  const severSubseaCable = useCallback(
+    (cableId: SubseaCableId) => {
+      engine.severSubseaCable(cableId);
+    },
+    [engine]
+  );
+
+  const healSubseaCable = useCallback(
+    (cableId: SubseaCableId) => {
+      engine.healSubseaCable(cableId);
+    },
+    [engine]
+  );
+
+  const healAllMultiRegion = useCallback(() => {
+    engine.healAllMultiRegion();
+  }, [engine]);
+
   return {
     isRunning,
     speed,
@@ -586,6 +673,12 @@ export function useSimulation() {
     byzantineEvents,
     chaosState,
     chaosScenarios,
+    globalRegions,
+    subseaCables,
+    geoRoutingPolicy,
+    primaryRegionId,
+    evacuatedRegions,
+    severedCables,
     toggleRunning,
     setSpeed,
     reset,
@@ -642,5 +735,13 @@ export function useSimulation() {
     resetByzantine,
     startChaosScenario,
     stopChaosScenario,
+    setGeoRoutingPolicy,
+    evacuateRegion,
+    restoreRegion,
+    promotePrimaryRegion,
+    simulateRegionAzOutage,
+    severSubseaCable,
+    healSubseaCable,
+    healAllMultiRegion,
   };
 }
