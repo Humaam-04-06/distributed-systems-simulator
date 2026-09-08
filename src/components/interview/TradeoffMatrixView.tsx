@@ -64,7 +64,10 @@ export const ARCHITECTURAL_TRADEOFFS: TradeOffItem[] = [
     optionB: {
       name: 'Uber H3 Hexagonal Grid',
       pros: ['All 6 adjacent neighbors are equidistant', 'Constant-time k-ring radius expansion'],
-      cons: ['Hierarchical hexagons cannot be perfectly subdivided without slight aperture skew'],
+      cons: [
+        'Hierarchical hexagons cannot be perfectly subdivided without slight aperture skew',
+        'Higher engineering complexity than basic SQL bounding box queries',
+      ],
       readLatency: '4 - 12 ms',
       writeLatency: '2 - 6 ms',
     },
@@ -85,7 +88,10 @@ export const ARCHITECTURAL_TRADEOFFS: TradeOffItem[] = [
     optionB: {
       name: 'Atomic In-Memory Lua Script (Redis)',
       pros: ['100k+ QPS single-threaded execution', '100% oversell prevention at sub-5ms latency'],
-      cons: ['Requires asynchronous write-behind reconciliation with primary database'],
+      cons: [
+        'Requires asynchronous write-behind reconciliation with primary database',
+        'Redis instance failover requires Sentinel or multi-AZ clustering for durability',
+      ],
       readLatency: '1 - 3 ms',
       writeLatency: '2 - 5 ms',
     },
@@ -127,7 +133,10 @@ export const ARCHITECTURAL_TRADEOFFS: TradeOffItem[] = [
     optionB: {
       name: 'Twitter Snowflake 64-bit',
       pros: ['Completely decentralized ID generation', 'Roughly time-ordered', 'Sub-millisecond generation'],
-      cons: ['Requires NTP clock drift synchronization to prevent duplicate timestamps'],
+      cons: [
+        'Requires NTP clock drift synchronization to prevent duplicate timestamps',
+        '64-bit integers require string serialization in JSON to prevent JS precision truncation',
+      ],
       readLatency: '0 ms',
       writeLatency: '< 1 ms',
     },
@@ -148,7 +157,10 @@ export const ARCHITECTURAL_TRADEOFFS: TradeOffItem[] = [
     optionB: {
       name: 'Persistent WebSockets (TCP)',
       pros: ['Full-duplex real-time bi-directional streaming', 'Sub-20ms message delivery latency'],
-      cons: ['Requires stateful gateway connection mapping (epoll/kqueue) and heartbeat pings'],
+      cons: [
+        'Requires stateful gateway connection mapping (epoll/kqueue) and heartbeat pings',
+        'Thundering herd reconnection storm when gateway restarts requires randomized jitter backoff',
+      ],
       readLatency: '5 - 15 ms',
       writeLatency: '5 - 15 ms',
     },
