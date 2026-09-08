@@ -6,9 +6,12 @@ import {
   Layers,
   Calculator,
   RotateCcw,
-  Play,
   FileText,
   Sliders,
+  AlertTriangle,
+  Zap,
+  ArrowRightLeft,
+  Activity,
 } from 'lucide-react';
 import {
   ScenarioId,
@@ -21,10 +24,17 @@ import {
 } from '../../engine/scenarios/ScenarioCatalog';
 import { CapacityEstimator, CapacityParameters } from '../../engine/scenarios/CapacityEstimator';
 import { ArchitectureEvaluator, EvaluationInput } from '../../engine/scenarios/ArchitectureEvaluator';
+import { ArchitecturePreset } from '../../engine/scenarios/ArchitecturePresets';
 import { SystemDesignScenarioCatalog } from './SystemDesignScenarioCatalog';
 import { CapacityEstimatorCalculator } from './CapacityEstimatorCalculator';
 import { SystemDesignObjectivePanel } from './SystemDesignObjectivePanel';
 import { ArchitectureScorecardModal } from './ArchitectureScorecardModal';
+import { ScenarioSimulationWidget } from './ScenarioSimulationWidget';
+import { TradeoffMatrixView } from './TradeoffMatrixView';
+import { SystemDesignQuizModal } from './SystemDesignQuizModal';
+import { FailureModeCaseStudyModal } from './FailureModeCaseStudyModal';
+import { ScenarioBenchmarkModal } from './ScenarioBenchmarkModal';
+import { ArchitecturePresetLoader } from './ArchitecturePresetLoader';
 import { showSuccessAlert } from '../../utils/alerts';
 
 interface SystemDesignSandboxViewProps {
@@ -46,8 +56,15 @@ export const SystemDesignSandboxView: React.FC<SystemDesignSandboxViewProps> = (
   const [completedChecklistIds, setCompletedChecklistIds] = useState<Set<string>>(
     new Set<string>(['clarify-read-write', 'clarify-qps'])
   );
-  const [activeTab, setActiveTab] = useState<'flow' | 'calculator' | 'catalog'>('flow');
+  const [activeTab, setActiveTab] = useState<'flow' | 'simulator' | 'calculator' | 'tradeoffs' | 'catalog'>('flow');
+  
+  // Modals
   const [isScorecardOpen, setIsScorecardOpen] = useState(false);
+  const [isQuizOpen, setIsQuizOpen] = useState(false);
+  const [isFailureModalOpen, setIsFailureModalOpen] = useState(false);
+  const [isBenchmarkOpen, setIsBenchmarkOpen] = useState(false);
+  const [isPresetLoaderOpen, setIsPresetLoaderOpen] = useState(false);
+
   const [evaluation, setEvaluation] = useState<ArchitectureEvaluationResult | null>(null);
 
   const scenario = useMemo(() => {
@@ -240,120 +257,152 @@ export const SystemDesignSandboxView: React.FC<SystemDesignSandboxViewProps> = (
     setIsScorecardOpen(true);
   };
 
+  const handleSelectPreset = (preset: ArchitecturePreset) => {
+    setIsPresetLoaderOpen(false);
+    if (onLoadPreset) {
+      onLoadPreset(preset.scenarioId);
+    }
+    showSuccessAlert(
+      `Preset Applied: ${preset.name}`,
+      `Loaded ${preset.tier === 'production' ? 'Optimized Production' : 'Naive Baseline'} blueprint.`
+    );
+  };
+
   const handleResetProgress = async () => {
     setCurrentStep('clarification');
     setCompletedSteps(new Set<InterviewStep>(['clarification']));
     setCompletedChecklistIds(new Set<string>());
-    await showSuccessAlert(
-      'Interview Reset',
-      'Session reset to Step 1 (Requirements Clarification).'
-    );
+    setEvaluation(null);
+    await showSuccessAlert('Progress Reset', 'Scenario interview progress has been reset.');
   };
 
   return (
-    <div className="w-full h-full flex flex-col bg-[#0d1b2a] text-[#e0e1dd] overflow-hidden">
-      {/* Top Header Bar */}
-      <div className="flex-shrink-0 flex items-center justify-between px-6 py-4 bg-[#1b263b] border-b border-[#415a77]/60">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-cyan-500/20 border border-cyan-500/40 text-cyan-400">
-            <GraduationCap className="w-6 h-6" />
+    <div className="flex flex-col space-y-6 animate-fadeIn">
+      {/* Top Header Card */}
+      <div className="p-6 rounded-3xl bg-[#1b263b] border border-[#415a77]/60 shadow-xl flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <div className="p-3.5 rounded-2xl bg-gradient-to-br from-indigo-500/20 to-blue-500/20 border border-indigo-500/40 text-indigo-300">
+            <GraduationCap className="w-8 h-8" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-lg font-extrabold tracking-tight text-[#e0e1dd]">
+            <div className="flex items-center gap-2.5">
+              <h2 className="text-xl font-bold text-[#e0e1dd]">
                 System Design Interview Sandbox
               </h2>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
-                FAANG / Staff Engineer Tier
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-indigo-500/20 text-indigo-300 border border-indigo-500/40">
+                Staff Engineer Track
               </span>
             </div>
-            <p className="text-xs text-[#778da9]">
-              Live 45-minute interactive architectural interview scenarios, SPOF detection & SLA grading
+            <p className="text-xs text-[#778da9] mt-0.5">
+              FAANG-grade architecture evaluation, interactive napkin math, live chaos simulations & staff scorecards.
             </p>
           </div>
         </div>
 
-        {/* View switcher tabs */}
         <div className="flex items-center gap-2">
-          <div className="flex p-1 bg-[#0d1b2a] rounded-xl border border-[#415a77]/60">
-            <button
-              onClick={() => setActiveTab('flow')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                activeTab === 'flow'
-                  ? 'bg-cyan-600 text-white shadow-md'
-                  : 'text-[#778da9] hover:text-[#e0e1dd]'
-              }`}
-            >
-              <Layers className="w-3.5 h-3.5" />
-              Interview Flow
-            </button>
-            <button
-              onClick={() => setActiveTab('calculator')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                activeTab === 'calculator'
-                  ? 'bg-cyan-600 text-white shadow-md'
-                  : 'text-[#778da9] hover:text-[#e0e1dd]'
-              }`}
-            >
-              <Calculator className="w-3.5 h-3.5" />
-              Napkin Math
-            </button>
-            <button
-              onClick={() => setActiveTab('catalog')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                activeTab === 'catalog'
-                  ? 'bg-cyan-600 text-white shadow-md'
-                  : 'text-[#778da9] hover:text-[#e0e1dd]'
-              }`}
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              Change Scenario ({ALL_SYSTEM_DESIGN_SCENARIOS.length})
-            </button>
-          </div>
-
-          {/* Quick Evaluate Action */}
           <button
-            onClick={handleRunEvaluation}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-950/40 transition-all cursor-pointer border border-emerald-400/40"
+            onClick={() => setIsPresetLoaderOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-[#0d1b2a] hover:bg-[#415a77] text-cyan-300 border border-cyan-500/40 transition-all cursor-pointer shadow-md"
+          >
+            <Layers className="w-4 h-4" />
+            Presets
+          </button>
+          <button
+            onClick={() => setIsQuizOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-[#0d1b2a] hover:bg-[#415a77] text-amber-300 border border-amber-500/40 transition-all cursor-pointer shadow-md"
           >
             <Award className="w-4 h-4" />
+            Quiz
+          </button>
+          <button
+            onClick={() => setIsFailureModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-[#0d1b2a] hover:bg-[#415a77] text-red-300 border border-red-500/40 transition-all cursor-pointer shadow-md"
+          >
+            <AlertTriangle className="w-4 h-4" />
+            Post-Mortems
+          </button>
+          <button
+            onClick={() => setIsBenchmarkOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-[#0d1b2a] hover:bg-[#415a77] text-purple-300 border border-purple-500/40 transition-all cursor-pointer shadow-md"
+          >
+            <Zap className="w-4 h-4" />
+            Benchmark
+          </button>
+          <button
+            onClick={handleRunEvaluation}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-lg transition-all cursor-pointer"
+          >
+            <Sparkles className="w-4 h-4" />
             Evaluate Architecture
           </button>
         </div>
       </div>
 
-      {/* Main Workspace Area */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-6">
-        {/* Scenario Banner Strip */}
-        <div className="p-4 rounded-2xl bg-[#1b263b] border border-[#415a77]/60 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-xl bg-[#0d1b2a] border border-cyan-500/40 flex items-center justify-center text-cyan-400 font-extrabold text-xl">
-              {scenario.title[0]}
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-base font-bold text-[#e0e1dd]">{scenario.title}</h3>
-                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-amber-500/20 text-amber-300 border border-amber-500/40">
-                  {scenario.difficulty}
-                </span>
-                <span className="px-2 py-0.5 rounded text-[10px] font-mono text-cyan-400 bg-[#0d1b2a]">
-                  🎯 {scenario.targetSlaPercentage}% SLA
-                </span>
-              </div>
-              <p className="text-xs text-[#778da9] mt-0.5">{scenario.summary}</p>
-            </div>
+      {/* Main Container */}
+      <div className="space-y-6">
+        {/* Navigation & Controls Bar */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl bg-[#1b263b] border border-[#415a77]/60">
+          {/* Scenario quick selector & View Switcher */}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setActiveTab('flow')}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all border ${
+                activeTab === 'flow'
+                  ? 'bg-blue-600/30 text-blue-300 border-blue-500/60 shadow-md'
+                  : 'bg-[#0d1b2a] text-[#778da9] border-[#415a77]/40 hover:text-[#e0e1dd]'
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5" />
+              Interview Roadmap
+            </button>
+            <button
+              onClick={() => setActiveTab('simulator')}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all border ${
+                activeTab === 'simulator'
+                  ? 'bg-purple-600/30 text-purple-300 border-purple-500/60 shadow-md'
+                  : 'bg-[#0d1b2a] text-[#778da9] border-[#415a77]/40 hover:text-[#e0e1dd]'
+              }`}
+            >
+              <Activity className="w-3.5 h-3.5" />
+              Traffic Simulator
+            </button>
+            <button
+              onClick={() => setActiveTab('calculator')}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all border ${
+                activeTab === 'calculator'
+                  ? 'bg-cyan-600/30 text-cyan-300 border-cyan-500/60 shadow-md'
+                  : 'bg-[#0d1b2a] text-[#778da9] border-[#415a77]/40 hover:text-[#e0e1dd]'
+              }`}
+            >
+              <Calculator className="w-3.5 h-3.5" />
+              Capacity Estimator
+            </button>
+            <button
+              onClick={() => setActiveTab('tradeoffs')}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all border ${
+                activeTab === 'tradeoffs'
+                  ? 'bg-amber-600/30 text-amber-300 border-amber-500/60 shadow-md'
+                  : 'bg-[#0d1b2a] text-[#778da9] border-[#415a77]/40 hover:text-[#e0e1dd]'
+              }`}
+            >
+              <ArrowRightLeft className="w-3.5 h-3.5" />
+              Tradeoff Matrix
+            </button>
+            <button
+              onClick={() => setActiveTab('catalog')}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all border ${
+                activeTab === 'catalog'
+                  ? 'bg-emerald-600/30 text-emerald-300 border-emerald-500/60 shadow-md'
+                  : 'bg-[#0d1b2a] text-[#778da9] border-[#415a77]/40 hover:text-[#e0e1dd]'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              Catalog ({ALL_SYSTEM_DESIGN_SCENARIOS.length})
+            </button>
           </div>
 
-          <div className="flex items-center gap-2.5">
-            {onLoadPreset && (
-              <button
-                onClick={() => onLoadPreset(activeScenarioId)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#0d1b2a] hover:bg-[#415a77] text-cyan-300 border border-cyan-500/40 transition-all cursor-pointer"
-              >
-                <Play className="w-3.5 h-3.5" />
-                Load Preset Blueprint
-              </button>
-            )}
+          {/* Right Toolbar Actions */}
+          <div className="flex items-center gap-2">
             {onNavigateCanvas && (
               <button
                 onClick={onNavigateCanvas}
@@ -391,6 +440,25 @@ export const SystemDesignSandboxView: React.FC<SystemDesignSandboxViewProps> = (
             </div>
 
             <div className="lg:col-span-4 space-y-6">
+              {/* Live Traffic Quick Preview */}
+              <div className="p-5 rounded-2xl bg-[#1b263b] border border-[#415a77]/60 space-y-3">
+                <div className="flex items-center justify-between pb-2 border-b border-[#415a77]/60">
+                  <div className="flex items-center gap-2">
+                    <Activity className="w-4 h-4 text-purple-400" />
+                    <span className="text-xs font-bold text-[#e0e1dd]">Traffic Simulation</span>
+                  </div>
+                  <button
+                    onClick={() => setActiveTab('simulator')}
+                    className="text-[10px] text-purple-400 hover:underline cursor-pointer"
+                  >
+                    Open Live Studio →
+                  </button>
+                </div>
+                <p className="text-xs text-[#778da9]">
+                  Run real-time scenario simulation with burst traffic, node failure injection & dynamic throughput tracking.
+                </p>
+              </div>
+
               {/* Napkin-math preview widget */}
               <div className="p-5 rounded-2xl bg-[#1b263b] border border-[#415a77]/60 space-y-3">
                 <div className="flex items-center justify-between pb-2 border-b border-[#415a77]/60">
@@ -400,7 +468,7 @@ export const SystemDesignSandboxView: React.FC<SystemDesignSandboxViewProps> = (
                   </div>
                   <button
                     onClick={() => setActiveTab('calculator')}
-                    className="text-[10px] text-cyan-400 hover:underline"
+                    className="text-[10px] text-cyan-400 hover:underline cursor-pointer"
                   >
                     Open Full Calc →
                   </button>
@@ -449,6 +517,12 @@ export const SystemDesignSandboxView: React.FC<SystemDesignSandboxViewProps> = (
           </div>
         )}
 
+        {activeTab === 'simulator' && (
+          <div className="max-w-4xl mx-auto">
+            <ScenarioSimulationWidget scenarioId={activeScenarioId} />
+          </div>
+        )}
+
         {activeTab === 'calculator' && (
           <div className="max-w-4xl mx-auto">
             <CapacityEstimatorCalculator
@@ -456,6 +530,12 @@ export const SystemDesignSandboxView: React.FC<SystemDesignSandboxViewProps> = (
               initialParams={capacityParams}
               onParamsChange={setCapacityParams}
             />
+          </div>
+        )}
+
+        {activeTab === 'tradeoffs' && (
+          <div className="max-w-5xl mx-auto">
+            <TradeoffMatrixView scenarioId={activeScenarioId} />
           </div>
         )}
 
@@ -475,11 +555,36 @@ export const SystemDesignSandboxView: React.FC<SystemDesignSandboxViewProps> = (
         )}
       </div>
 
-      {/* Scorecard Modal */}
+      {/* Modals */}
       <ArchitectureScorecardModal
         isOpen={isScorecardOpen}
         evaluation={evaluation}
         onClose={() => setIsScorecardOpen(false)}
+      />
+
+      <SystemDesignQuizModal
+        isOpen={isQuizOpen}
+        scenarioId={activeScenarioId}
+        onClose={() => setIsQuizOpen(false)}
+      />
+
+      <FailureModeCaseStudyModal
+        isOpen={isFailureModalOpen}
+        scenarioId={activeScenarioId}
+        onClose={() => setIsFailureModalOpen(false)}
+      />
+
+      <ScenarioBenchmarkModal
+        isOpen={isBenchmarkOpen}
+        scenarioId={activeScenarioId}
+        onClose={() => setIsBenchmarkOpen(false)}
+      />
+
+      <ArchitecturePresetLoader
+        isOpen={isPresetLoaderOpen}
+        scenarioId={activeScenarioId}
+        onClose={() => setIsPresetLoaderOpen(false)}
+        onSelectPreset={handleSelectPreset}
       />
     </div>
   );
