@@ -68,6 +68,11 @@ import {
 import { GeoDnsRouter } from './GeoDnsRouter';
 import { MultiRegionLatencyEngine } from './MultiRegionLatencyEngine';
 import { CrossRegionFailoverManager } from './CrossRegionFailoverManager';
+import { ScenarioChallengeRunner } from './scenarios/ScenarioChallengeRunner';
+import { InterviewHintsEngine } from './scenarios/InterviewHintsEngine';
+import { ArchitecturePresetsCatalog } from './scenarios/ArchitecturePresets';
+import { ArchitectureEvaluator } from './scenarios/ArchitectureEvaluator';
+import { ScenarioId, ArchitectureEvaluationResult } from './scenarios/ScenarioTypes';
 import {
   IncidentEvent,
   IncidentSeverity,
@@ -114,6 +119,8 @@ export class SimulationEngine {
   public geoDnsRouter: GeoDnsRouter;
   public multiRegionLatency: MultiRegionLatencyEngine;
   public crossRegionFailover: CrossRegionFailoverManager;
+  public challengeRunner: ScenarioChallengeRunner;
+  public hintsEngine: InterviewHintsEngine;
 
   // Cluster Nodes
   public lbNode: LoadBalancerNodeState;
@@ -289,9 +296,121 @@ export class SimulationEngine {
     this.geoDnsRouter = new GeoDnsRouter();
     this.multiRegionLatency = new MultiRegionLatencyEngine();
     this.crossRegionFailover = new CrossRegionFailoverManager();
+    this.challengeRunner = new ScenarioChallengeRunner('twitter-feed');
+    this.hintsEngine = new InterviewHintsEngine();
 
     // Bind tick loop
     this.clock.onTick((_tick, deltaMs) => this.onTick(deltaMs));
+  }
+
+  public loadArchitecturePreset(presetId: string): boolean {
+    const preset = ArchitecturePresetsCatalog.getById(presetId);
+    if (!preset) return false;
+
+    this.config.targetRps = preset.targetRps;
+    this.config.cacheEnabled = preset.cacheEnabled;
+    this.config.circuitBreakerEnabled = preset.circuitBreakersEnabled;
+    this.rateLimiter.setEnabled(preset.rateLimiterEnabled);
+
+    // Synchronous vs Asynchronous replication
+    this.dbNode.syncReplication = preset.replicationEnabled;
+    if (preset.replicationEnabled && this.dbNode.connectedReplicas.length === 0) {
+      this.dbNode.connectedReplicas = ['db-replica-1', 'db-replica-2'];
+    } else if (!preset.replicationEnabled) {
+      this.dbNode.connectedReplicas = [];
+    }
+
+    // Resize server pool
+    const currentCount = this.serverNodes.length;
+    if (preset.serverCount > currentCount) {
+      for (let i = currentCount + 1; i <= preset.serverCount; i++) {
+        const id = `server-${i}`;
+        const newServer: ServerNodeState = {
+          id,
+          name: `Worker Server ${i}`,
+          type: 'server',
+          health: 'healthy',
+          activeConnections: 0,
+          maxConnections: 600,
+          queueDepth: 0,
+          maxQueueDepth: 150,
+          cpuLoad: 15,
+          processedTotal: 0,
+          failedTotal: 0,
+          threadPoolActive: 0,
+          threadPoolSize: 50,
+          circuitBreakerState: 'closed',
+          failureCountConsecutive: 0,
+        };
+        this.serverNodes.push(newServer);
+        this.serverQueues.set(
+          id,
+          new QueueBuffer({
+            maxQueueDepth: 150,
+            serviceRateMu: this.config.serverCapacityRps,
+            concurrencyLimit: 50,
+          })
+        );
+      }
+    } else if (preset.serverCount < currentCount) {
+      this.serverNodes = this.serverNodes.slice(0, preset.serverCount);
+    }
+
+    this.notify();
+    return true;
+  }
+
+  public evaluateCurrentArchitecture(scenarioId?: ScenarioId): ArchitectureEvaluationResult {
+    const targetId = scenarioId ?? this.challengeRunner.getActiveScenario().id;
+
+    const dbNodesList: DatabaseNode[] = [
+      {
+        id: this.dbNode.id,
+        name: this.dbNode.name,
+        role: this.dbNode.role,
+        health:
+          this.dbNode.health === 'crashed'
+            ? 'crashed'
+            : this.dbNode.health === 'degraded'
+            ? 'degraded'
+            : 'healthy',
+        lsn: 10000,
+        replicationLagMs: this.dbNode.replicationLagMs,
+        pendingWalBytes: 0,
+        readIops: 250,
+        writeIops: 120,
+        cpuLoad: this.dbNode.cpuLoad,
+      },
+      ...this.dbNode.connectedReplicas.map((id, idx) => ({
+        id,
+        name: `Postgres Read Follower ${idx + 1}`,
+        role: 'replica' as const,
+        health: 'healthy' as const,
+        lsn: 9998,
+        replicationLagMs: 4 + idx * 2,
+        pendingWalBytes: 64,
+        readIops: 400,
+        writeIops: 0,
+        cpuLoad: 25,
+      })),
+    ];
+
+    const totalCacheOps = this.cacheNode.hitCount + this.cacheNode.missCount;
+    const cacheHitRatio = totalCacheOps > 0 ? this.cacheNode.hitCount / totalCacheOps : 0.88;
+
+    return ArchitectureEvaluator.evaluate({
+      scenarioId: targetId,
+      metrics: this.metrics.getSnapshot(),
+      servers: this.serverNodes,
+      dbNode: this.dbNode,
+      dbNodes: dbNodesList,
+      cacheEnabled: this.config.cacheEnabled,
+      cacheHitRatio,
+      circuitBreakerEnabled: this.config.circuitBreakerEnabled,
+      rateLimiterEnabled: this.rateLimiter.isEnabled(),
+      isMultiRegionActive: this.crossRegionFailover.getEvacuatedRegions().length > 0,
+      config: this.config,
+    });
   }
 
   public subscribe(cb: EngineSubscriber): () => void {
