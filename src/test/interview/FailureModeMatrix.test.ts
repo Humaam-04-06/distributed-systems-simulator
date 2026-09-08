@@ -1,8 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  FailureModeMatrix,
-  FailureModeCaseStudies,
-} from '../../engine/scenarios/FailureModeMatrix';
+import { FailureModeMatrix } from '../../engine/scenarios/FailureModeMatrix';
 import { ScenarioId } from '../../engine/scenarios/ScenarioTypes';
 
 describe('FailureModeMatrix', () => {
