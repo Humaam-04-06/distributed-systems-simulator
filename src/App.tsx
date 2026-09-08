@@ -24,6 +24,7 @@ import {
   Anchor,
   BarChart3,
   FlaskConical,
+  Globe,
 } from 'lucide-react';
 import { LoadBalancingAlgorithm } from './engine/types';
 import { ServerClusterGrid } from './components/nodes/ServerClusterGrid';
@@ -38,6 +39,8 @@ import { TraceInspectorModal } from './components/modals/TraceInspectorModal';
 import { NetworkPartitionCanvas } from './components/chaos/NetworkPartitionCanvas';
 import { ByzantineTraitorPanel } from './components/chaos/ByzantineTraitorPanel';
 import { ChaosExperimentConsole } from './components/chaos/ChaosExperimentConsole';
+import { GlobalRegionMapView } from './components/geo/GlobalRegionMapView';
+import { GeoRoutingPolicyControl } from './components/geo/GeoRoutingPolicyControl';
 
 export const App: React.FC = () => {
   const {
@@ -138,15 +141,30 @@ export const App: React.FC = () => {
     resetByzantine,
     startChaosScenario,
     stopChaosScenario,
+    globalRegions,
+    subseaCables,
+    geoRoutingPolicy,
+    primaryRegionId,
+    evacuatedRegions,
+    severedCables,
+    setGeoRoutingPolicy,
+    evacuateRegion,
+    restoreRegion,
+    promotePrimaryRegion,
+    simulateRegionAzOutage,
+    severSubseaCable,
+    healSubseaCable,
+    healAllMultiRegion,
   } = useSimulation();
 
   const [chaosActive, setChaosActive] = useState<boolean>(false);
   const [isHashRingOpen, setIsHashRingOpen] = useState<boolean>(false);
   const [isCircuitModalOpen, setIsCircuitModalOpen] = useState<boolean>(false);
   const [centerTab, setCenterTab] = useState<
-    'topology' | 'cluster' | 'database' | 'cache' | 'resilience' | 'bulkhead' | 'telemetry' | 'chaos'
+    'topology' | 'cluster' | 'database' | 'cache' | 'resilience' | 'bulkhead' | 'telemetry' | 'chaos' | 'geo'
   >('topology');
   const [chaosSubTab, setChaosSubTab] = useState<'scenarios' | 'partitions' | 'byzantine'>('scenarios');
+  const [geoSubTab, setGeoSubTab] = useState<'map' | 'policies'>('map');
 
   const activeServers = serverNodes.filter((s) => s.health !== 'crashed').length;
   const totalServers = serverNodes.length;
@@ -518,6 +536,20 @@ export const App: React.FC = () => {
                   </span>
                 )}
               </button>
+              <button
+                onClick={() => setCenterTab('geo')}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  centerTab === 'geo'
+                    ? 'bg-cyan-950/60 text-cyan-300 border border-cyan-500/50 shadow font-semibold'
+                    : 'text-[#778da9] hover:text-[#e0e1dd]'
+                }`}
+              >
+                <Globe className="w-3.5 h-3.5 text-cyan-400" />
+                Multi-Region & Geo-DNS
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#0d1b2a] text-cyan-300 font-mono font-semibold">
+                  {evacuatedRegions.length > 0 ? `${evacuatedRegions.length} EVACUATED` : `${globalRegions.length} REGIONS`}
+                </span>
+              </button>
             </div>
           </div>
 
@@ -676,6 +708,69 @@ export const App: React.FC = () => {
                   onToggleTraitor={toggleByzantineTraitor}
                   onClearEvents={clearByzantineEvents}
                   onResetByzantine={resetByzantine}
+                />
+              )}
+            </div>
+          ) : centerTab === 'geo' ? (
+            <div className="flex flex-col space-y-4">
+              {/* Geo Sub-Navigation Bar */}
+              <div className="flex items-center justify-between bg-[#1b263b] p-1.5 rounded-xl border border-[#415a77]/80">
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => setGeoSubTab('map')}
+                    className={`flex items-center gap-2 px-3 py-1 rounded-lg text-xs font-medium transition-all ${
+                      geoSubTab === 'map'
+                        ? 'bg-[#415a77] text-[#e0e1dd] shadow font-semibold'
+                        : 'text-[#778da9] hover:text-[#e0e1dd]'
+                    }`}
+                  >
+                    <Globe className="w-3.5 h-3.5 text-cyan-400" />
+                    Global Fabric Map & Subsea Cables
+                  </button>
+                  <button
+                    onClick={() => setGeoSubTab('policies')}
+                    className={`flex items-center gap-2 px-3 py-1 rounded-lg text-xs font-medium transition-all ${
+                      geoSubTab === 'policies'
+                        ? 'bg-[#415a77] text-[#e0e1dd] shadow font-semibold'
+                        : 'text-[#778da9] hover:text-[#e0e1dd]'
+                    }`}
+                  >
+                    <Activity className="w-3.5 h-3.5 text-amber-400" />
+                    Geo-Routing Policies & Disaster Drills
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2 text-xs font-mono text-[#778da9] px-2">
+                  <span>Policy: <strong className="text-cyan-300 uppercase">{geoRoutingPolicy}</strong></span>
+                  <span>|</span>
+                  <span>Primary: <strong className="text-amber-300">{primaryRegionId}</strong></span>
+                </div>
+              </div>
+
+              {geoSubTab === 'map' ? (
+                <GlobalRegionMapView
+                  regions={globalRegions}
+                  cables={subseaCables}
+                  activePolicy={geoRoutingPolicy}
+                  primaryRegionId={primaryRegionId}
+                  evacuatedRegions={evacuatedRegions}
+                  onEvacuateRegion={evacuateRegion}
+                  onRestoreRegion={restoreRegion}
+                  onPromotePrimary={promotePrimaryRegion}
+                  onSeverCable={severSubseaCable}
+                  onHealCable={healSubseaCable}
+                />
+              ) : (
+                <GeoRoutingPolicyControl
+                  activePolicy={geoRoutingPolicy}
+                  regions={globalRegions}
+                  primaryRegionId={primaryRegionId}
+                  evacuatedRegions={evacuatedRegions}
+                  severedCables={severedCables}
+                  onSetPolicy={setGeoRoutingPolicy}
+                  onSimulateAzOutage={simulateRegionAzOutage}
+                  onSeverCable={severSubseaCable}
+                  onHealAll={healAllMultiRegion}
                 />
               )}
             </div>
