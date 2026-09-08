@@ -26,6 +26,17 @@ import { TenantQuota, TenantTier } from '../engine/TenantBulkheadQuarantine';
 import { Trace } from '../engine/DistributedTracer';
 import { TelemetrySnapshot } from '../engine/OpenTelemetryExporter';
 import {
+  LinkStatus,
+  PartitionPreset,
+  SubnetIsland,
+} from '../engine/NetworkPartitionMatrix';
+import { ByzantineEvent } from '../engine/ByzantineFaultInjector';
+import {
+  ChaosScenario,
+  ChaosScenarioId,
+  ChaosExperimentState,
+} from '../engine/ChaosExperimentRunner';
+import {
   IncidentEvent,
   ServerNodeState,
   DatabaseNodeState,
@@ -33,6 +44,7 @@ import {
   LoadBalancerNodeState,
   SimulationMetrics,
   LoadBalancingAlgorithm,
+  SimulationConfig,
 } from '../engine/types';
 
 export function useSimulation() {
@@ -44,33 +56,41 @@ export function useSimulation() {
 
   const engine = engineRef.current;
 
-  // React state reflecting engine internals
-  const [isRunning, setIsRunning] = useState<boolean>(false);
+  // Simulation run state
+  const [isRunning, setIsRunning] = useState<boolean>(true);
   const [speed, setSpeedState] = useState<number>(1);
+  const [uptimeSeconds, setUptimeSeconds] = useState<number>(0);
+
+  // Engine node states
   const [metrics, setMetrics] = useState<SimulationMetrics>(engine.getMetricsSnapshot());
   const [lbNode, setLbNode] = useState<LoadBalancerNodeState>({ ...engine.lbNode });
-  const [serverNodes, setServerNodes] = useState<ServerNodeState[]>([
-    ...engine.serverNodes.map((s) => ({ ...s })),
-  ]);
+  const [serverNodes, setServerNodes] = useState<ServerNodeState[]>(
+    engine.serverNodes.map((s) => ({ ...s }))
+  );
   const [dbNode, setDbNode] = useState<DatabaseNodeState>({ ...engine.dbNode });
   const [cacheNode, setCacheNode] = useState<CacheNodeState>({ ...engine.cacheNode });
   const [incidents, setIncidents] = useState<IncidentEvent[]>([...engine.incidents]);
-  const [config, setConfig] = useState({ ...engine.config });
-  const [uptimeSeconds, setUptimeSeconds] = useState<number>(0);
-  const [dbNodes, setDbNodes] = useState<DatabaseNode[]>([...engine.getDbNodes()]);
+  const [config, setConfig] = useState<SimulationConfig>({ ...engine.config });
+  const [dbNodes, setDbNodes] = useState<DatabaseNode[]>(engine.getDbNodes());
   const [replicationMode, setReplicationModeState] = useState<ReplicationMode>(
     engine.getDbReplicationMode()
   );
-  const [isSplitBrain, setIsSplitBrain] = useState<boolean>(engine.failoverElection.isSplitBrain());
-  const [splitBrainPrimaries, setSplitBrainPrimaries] = useState<string[]>([
-    ...engine.failoverElection.getSplitBrainPrimaries(),
-  ]);
-  const [writeConflicts, setWriteConflicts] = useState<WriteConflict[]>([
-    ...engine.getWriteConflicts(),
-  ]);
+  const [isSplitBrain, setIsSplitBrain] = useState<boolean>(
+    engine.failoverElection.isSplitBrain()
+  );
+  const [splitBrainPrimaries, setSplitBrainPrimaries] = useState<string[]>(
+    engine.failoverElection.getSplitBrainPrimaries()
+  );
+  const [writeConflicts, setWriteConflicts] = useState<WriteConflict[]>(
+    engine.getWriteConflicts()
+  );
   const [cacheMetrics, setCacheMetrics] = useState<CacheMetrics>(engine.getCacheMetrics());
-  const [cacheEntries, setCacheEntries] = useState<CacheEntry[]>([...engine.getCacheEntries()]);
-  const [cachePolicy, setCachePolicyState] = useState<EvictionPolicy>(engine.getCachePolicy());
+  const [cacheEntries, setCacheEntries] = useState<CacheEntry[]>(
+    engine.getCacheEntries()
+  );
+  const [cachePolicy, setCachePolicyState] = useState<EvictionPolicy>(
+    engine.getCachePolicy()
+  );
   const [cacheMitigationStrategy, setCacheMitigationStrategyState] =
     useState<StampedeMitigationStrategy>(engine.getCacheMitigationStrategy());
   const [isStampedeActive, setIsStampedeActive] = useState<boolean>(
@@ -112,6 +132,24 @@ export function useSimulation() {
   const [selectedTrace, setSelectedTrace] = useState<Trace | null>(null);
   const [isTraceModalOpen, setIsTraceModalOpen] = useState<boolean>(false);
 
+  // Chaos Engineering & Partitions
+  const [partitionMatrix, setPartitionMatrix] = useState<Record<string, Record<string, LinkStatus>>>(
+    engine.getPartitionMatrixSnapshot()
+  );
+  const [subnets, setSubnets] = useState<SubnetIsland[]>(engine.getSubnets());
+  const [byzantineTraitors, setByzantineTraitors] = useState<string[]>(
+    engine.getByzantineTraitors()
+  );
+  const [byzantineEvents, setByzantineEvents] = useState<ByzantineEvent[]>(
+    engine.getByzantineEvents()
+  );
+  const [chaosState, setChaosState] = useState<ChaosExperimentState>(
+    engine.getChaosState()
+  );
+  const [chaosScenarios, setChaosScenarios] = useState<ChaosScenario[]>(
+    engine.getChaosScenarios()
+  );
+
   // Subscribe to engine tick notifications
   useEffect(() => {
     const unsub = engine.subscribe(() => {
@@ -145,6 +183,12 @@ export function useSimulation() {
       setTelemetrySnapshot(engine.getTelemetrySnapshot());
       setPrometheusText(engine.getPrometheusMetricsText());
       setOtlpJson(engine.getOTLPJson());
+      setPartitionMatrix({ ...engine.getPartitionMatrixSnapshot() });
+      setSubnets([...engine.getSubnets()]);
+      setByzantineTraitors([...engine.getByzantineTraitors()]);
+      setByzantineEvents([...engine.getByzantineEvents()]);
+      setChaosState({ ...engine.getChaosState() });
+      setChaosScenarios([...engine.getChaosScenarios()]);
     });
 
     // Start simulation clock
@@ -442,6 +486,64 @@ export function useSimulation() {
     setSelectedTrace(null);
   }, [engine]);
 
+  const severPartitionLink = useCallback(
+    (fromId: string, toId: string) => {
+      engine.severPartitionLink(fromId, toId);
+    },
+    [engine]
+  );
+
+  const connectPartitionLink = useCallback(
+    (fromId: string, toId: string) => {
+      engine.connectPartitionLink(fromId, toId);
+    },
+    [engine]
+  );
+
+  const degradePartitionLink = useCallback(
+    (fromId: string, toId: string) => {
+      engine.degradePartitionLink(fromId, toId);
+    },
+    [engine]
+  );
+
+  const applyPartitionPreset = useCallback(
+    (preset: PartitionPreset) => {
+      engine.applyPartitionPreset(preset);
+    },
+    [engine]
+  );
+
+  const healAllPartitions = useCallback(() => {
+    engine.healAllPartitions();
+  }, [engine]);
+
+  const toggleByzantineTraitor = useCallback(
+    (nodeId: string) => {
+      engine.toggleByzantineTraitor(nodeId);
+    },
+    [engine]
+  );
+
+  const clearByzantineEvents = useCallback(() => {
+    engine.clearByzantineEvents();
+  }, [engine]);
+
+  const resetByzantine = useCallback(() => {
+    engine.resetByzantine();
+  }, [engine]);
+
+  const startChaosScenario = useCallback(
+    (id: ChaosScenarioId) => {
+      engine.startChaosScenario(id);
+    },
+    [engine]
+  );
+
+  const stopChaosScenario = useCallback(() => {
+    engine.stopChaosScenario();
+  }, [engine]);
+
   return {
     isRunning,
     speed,
@@ -478,6 +580,12 @@ export function useSimulation() {
     otlpJson,
     selectedTrace,
     isTraceModalOpen,
+    partitionMatrix,
+    subnets,
+    byzantineTraitors,
+    byzantineEvents,
+    chaosState,
+    chaosScenarios,
     toggleRunning,
     setSpeed,
     reset,
@@ -524,5 +632,15 @@ export function useSimulation() {
     openTraceModal,
     closeTraceModal,
     clearTraces,
+    severPartitionLink,
+    connectPartitionLink,
+    degradePartitionLink,
+    applyPartitionPreset,
+    healAllPartitions,
+    toggleByzantineTraitor,
+    clearByzantineEvents,
+    resetByzantine,
+    startChaosScenario,
+    stopChaosScenario,
   };
 }

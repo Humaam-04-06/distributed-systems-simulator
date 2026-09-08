@@ -43,6 +43,22 @@ import {
 import { DistributedTracer, Trace } from './DistributedTracer';
 import { OpenTelemetryExporter, TelemetrySnapshot } from './OpenTelemetryExporter';
 import {
+  NetworkPartitionMatrix,
+  PartitionPreset,
+  SubnetIsland,
+  LinkStatus,
+} from './NetworkPartitionMatrix';
+import {
+  ByzantineFaultInjector,
+  ByzantineEvent,
+} from './ByzantineFaultInjector';
+import {
+  ChaosExperimentRunner,
+  ChaosScenarioId,
+  ChaosScenario,
+  ChaosExperimentState,
+} from './ChaosExperimentRunner';
+import {
   IncidentEvent,
   IncidentSeverity,
   Packet,
@@ -82,6 +98,9 @@ export class SimulationEngine {
   public tenantBulkhead: TenantBulkheadQuarantine;
   public tracer: DistributedTracer;
   public otelExporter: OpenTelemetryExporter;
+  public partitionMatrix: NetworkPartitionMatrix;
+  public byzantineInjector: ByzantineFaultInjector;
+  public chaosRunner: ChaosExperimentRunner;
 
   // Cluster Nodes
   public lbNode: LoadBalancerNodeState;
@@ -241,6 +260,19 @@ export class SimulationEngine {
       processedTotal: 0,
       failedTotal: 0,
     };
+
+    // 5. Initialize Chaos Engineering & Partition Matrix
+    const allNodeIds = [
+      'lb-1',
+      ...this.serverNodes.map((s) => s.id),
+      'redis-1',
+      'db-primary',
+      'db-replica-1',
+      'db-replica-2',
+    ];
+    this.partitionMatrix = new NetworkPartitionMatrix(allNodeIds);
+    this.byzantineInjector = new ByzantineFaultInjector();
+    this.chaosRunner = new ChaosExperimentRunner();
 
     // Bind tick loop
     this.clock.onTick((_tick, deltaMs) => this.onTick(deltaMs));
@@ -765,6 +797,51 @@ export class SimulationEngine {
         }
       }
 
+      // 3.4 Network Partition Check
+      const canReachServer = this.partitionMatrix.canCommunicate('lb-1', targetServer.id);
+      if (!canReachServer) {
+        this.tenantBulkhead.release(tenantTier);
+        this.threadBulkhead.release(domain);
+        packet.status = 'timeout_504';
+        packet.totalLatencyMs = Math.round(this.config.networkLatencyMs * 2.5);
+        this.metrics.recordCompleted(packet);
+        this.tracer.addEvent(traceId, rootSpanId, 'network_partition_link_severed', {
+          source: 'lb-1',
+          target: targetServer.id,
+        }, now);
+        this.tracer.endTrace(traceId, 504, now + packet.totalLatencyMs);
+        continue;
+      }
+
+      // 3.5 Byzantine Traitor Fault Injection Check
+      if (this.byzantineInjector.isTraitor(targetServer.id)) {
+        const byzMsg = this.byzantineInjector.processOutboundMessage(
+          targetServer.id,
+          `PAYLOAD_${packet.id}`,
+          now
+        );
+        if (byzMsg.faultInjected) {
+          const verification = this.byzantineInjector.verifyInboundMessage(
+            targetServer.id,
+            byzMsg.payload,
+            byzMsg.checksum
+          );
+          if (verification.corrupted) {
+            this.tenantBulkhead.release(tenantTier);
+            this.threadBulkhead.release(domain);
+            packet.status = 'error_500';
+            packet.totalLatencyMs = 15;
+            this.metrics.recordCompleted(packet);
+            this.tracer.addEvent(traceId, rootSpanId, 'byzantine_fault_quarantined', {
+              traitor: targetServer.id,
+              faultType: byzMsg.faultType || 'payload-corruption',
+            }, now);
+            this.tracer.endTrace(traceId, 500, now + 15);
+            continue;
+          }
+        }
+      }
+
       // Trace Spans for successful pipeline
       const cacheHit =
         packet.type === 'read' &&
@@ -1096,6 +1173,21 @@ export class SimulationEngine {
     // 5. Update Metrics
     this.metrics.tick(now, aliveServers.length);
 
+    // 5.1 Tick Chaos Monkey Experiment Runner
+    const curSnap = this.metrics.getSnapshot();
+    const chaosTick = this.chaosRunner.tick(
+      deltaMs,
+      100 - curSnap.errorRatePercentage,
+      curSnap.latencies.p99
+    );
+    if (chaosTick.justCompleted) {
+      this.addIncident(
+        'warn',
+        'lb-1',
+        this.chaosRunner.getState().blastRadiusSummary
+      );
+    }
+
     // 6. Notify UI subscribers
     this.notify();
   }
@@ -1303,6 +1395,107 @@ export class SimulationEngine {
     this.notify();
   }
 
+  // --- Chaos Engineering & Network Partition Methods ---
+
+  public getPartitionMatrixSnapshot(): Record<string, Record<string, LinkStatus>> {
+    return this.partitionMatrix.getMatrixSnapshot();
+  }
+
+  public getSubnets(): SubnetIsland[] {
+    return this.partitionMatrix.calculateSubnets();
+  }
+
+  public severPartitionLink(src: string, dst: string): void {
+    this.partitionMatrix.severLink(src, dst);
+    this.addIncident('warn', src, `Network partition severed link [${src} ➔ ${dst}].`);
+    this.notify();
+  }
+
+  public connectPartitionLink(src: string, dst: string): void {
+    this.partitionMatrix.connectLink(src, dst);
+    this.addIncident('info', src, `Network link reconnected [${src} ➔ ${dst}].`);
+    this.notify();
+  }
+
+  public degradePartitionLink(src: string, dst: string): void {
+    this.partitionMatrix.setDegradedLink(src, dst, 0.35, 180);
+    this.addIncident('warn', src, `Network link degraded with 35% packet drop [${src} ➔ ${dst}].`);
+    this.notify();
+  }
+
+  public applyPartitionPreset(preset: PartitionPreset): void {
+    this.partitionMatrix.applyPreset(preset);
+    this.addIncident('critical', 'lb-1', `Partition preset applied: [${preset.toUpperCase()}].`);
+    this.notify();
+  }
+
+  public healAllPartitions(): void {
+    this.partitionMatrix.healAll();
+    this.addIncident('info', 'lb-1', 'All network partitions healed to 100% connectivity.');
+    this.notify();
+  }
+
+  public toggleByzantineTraitor(nodeId: string): void {
+    if (this.byzantineInjector.isTraitor(nodeId)) {
+      this.byzantineInjector.removeTraitorNode(nodeId);
+      this.addIncident('info', nodeId, `Node [${nodeId}] restored to honest consensus participation.`);
+    } else {
+      this.byzantineInjector.setTraitorNode(nodeId, 'payload-corruption', 0.6);
+      this.addIncident('critical', nodeId, `Byzantine Traitor infiltrated node [${nodeId}]! Bit-flips active.`);
+    }
+    this.notify();
+  }
+
+  public getByzantineTraitors(): string[] {
+    return this.byzantineInjector.getTraitors();
+  }
+
+  public getByzantineEvents(): ByzantineEvent[] {
+    return this.byzantineInjector.getEvents();
+  }
+
+  public clearByzantineEvents(): void {
+    this.byzantineInjector.clearEvents();
+    this.notify();
+  }
+
+  public resetByzantine(): void {
+    this.byzantineInjector.reset();
+    this.addIncident('info', 'lb-1', 'All Byzantine traitor nodes cleared.');
+    this.notify();
+  }
+
+  public getChaosState(): ChaosExperimentState {
+    return this.chaosRunner.getState();
+  }
+
+  public getChaosScenarios(): ChaosScenario[] {
+    return this.chaosRunner.getScenarios();
+  }
+
+  public startChaosScenario(id: ChaosScenarioId): void {
+    const scenario = this.chaosRunner.startScenario(id);
+    if (scenario) {
+      this.addIncident('critical', 'lb-1', `Chaos Drill launched: [${scenario.name}]. Evaluating steady-state.`);
+      if (id === 'az-outage') {
+        this.partitionMatrix.applyPreset('az-partition');
+      } else if (id === 'database-blackhole') {
+        this.partitionMatrix.applyPreset('isolate-db-primary');
+      } else if (id === 'byzantine-traitor') {
+        this.byzantineInjector.setTraitorNode('server-2', 'payload-corruption', 0.8);
+      }
+    }
+    this.notify();
+  }
+
+  public stopChaosScenario(): void {
+    this.chaosRunner.stopScenario('User aborted');
+    this.partitionMatrix.healAll();
+    this.byzantineInjector.reset();
+    this.addIncident('info', 'lb-1', 'Chaos drill aborted. Partitions healed.');
+    this.notify();
+  }
+
   public getMetricsSnapshot(): SimulationMetrics {
     return this.metrics.getSnapshot();
   }
@@ -1315,6 +1508,9 @@ export class SimulationEngine {
     this.resetResilience();
     this.resetBulkheads();
     this.clearTraces();
+    this.partitionMatrix.healAll();
+    this.byzantineInjector.reset();
+    this.chaosRunner.reset();
     this.serverNodes.forEach((s) => {
       s.health = 'healthy';
       s.cpuLoad = 10;

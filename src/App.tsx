@@ -23,6 +23,7 @@ import {
   Disc3,
   Anchor,
   BarChart3,
+  FlaskConical,
 } from 'lucide-react';
 import { LoadBalancingAlgorithm } from './engine/types';
 import { ServerClusterGrid } from './components/nodes/ServerClusterGrid';
@@ -34,6 +35,9 @@ import { TraceWaterfallViewer } from './components/telemetry/TraceWaterfallViewe
 import { TelemetryMetricsConsole } from './components/telemetry/TelemetryMetricsConsole';
 import { CircuitBreakerModal } from './components/modals/CircuitBreakerModal';
 import { TraceInspectorModal } from './components/modals/TraceInspectorModal';
+import { NetworkPartitionCanvas } from './components/chaos/NetworkPartitionCanvas';
+import { ByzantineTraitorPanel } from './components/chaos/ByzantineTraitorPanel';
+import { ChaosExperimentConsole } from './components/chaos/ChaosExperimentConsole';
 
 export const App: React.FC = () => {
   const {
@@ -118,14 +122,31 @@ export const App: React.FC = () => {
     openTraceModal,
     closeTraceModal,
     clearTraces,
+    partitionMatrix,
+    subnets,
+    byzantineTraitors,
+    byzantineEvents,
+    chaosState,
+    chaosScenarios,
+    severPartitionLink,
+    connectPartitionLink,
+    degradePartitionLink,
+    applyPartitionPreset,
+    healAllPartitions,
+    toggleByzantineTraitor,
+    clearByzantineEvents,
+    resetByzantine,
+    startChaosScenario,
+    stopChaosScenario,
   } = useSimulation();
 
   const [chaosActive, setChaosActive] = useState<boolean>(false);
   const [isHashRingOpen, setIsHashRingOpen] = useState<boolean>(false);
   const [isCircuitModalOpen, setIsCircuitModalOpen] = useState<boolean>(false);
   const [centerTab, setCenterTab] = useState<
-    'topology' | 'cluster' | 'database' | 'cache' | 'resilience' | 'bulkhead' | 'telemetry'
+    'topology' | 'cluster' | 'database' | 'cache' | 'resilience' | 'bulkhead' | 'telemetry' | 'chaos'
   >('topology');
+  const [chaosSubTab, setChaosSubTab] = useState<'scenarios' | 'partitions' | 'byzantine'>('scenarios');
 
   const activeServers = serverNodes.filter((s) => s.health !== 'crashed').length;
   const totalServers = serverNodes.length;
@@ -473,6 +494,30 @@ export const App: React.FC = () => {
                   {traces.length} TRACES
                 </span>
               </button>
+              <button
+                onClick={() => setCenterTab('chaos')}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  centerTab === 'chaos'
+                    ? 'bg-rose-950/60 text-rose-300 border border-rose-500/50 shadow font-semibold'
+                    : 'text-[#778da9] hover:text-[#e0e1dd]'
+                }`}
+              >
+                <FlaskConical className="w-3.5 h-3.5 text-rose-400" />
+                Chaos Lab & Partitions
+                {chaosState.status === 'running' ? (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-rose-600 text-white font-mono font-bold animate-pulse">
+                    DRILL ACTIVE
+                  </span>
+                ) : byzantineTraitors.length > 0 ? (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500 text-black font-mono font-bold animate-pulse">
+                    TRAITOR ACTIVE
+                  </span>
+                ) : (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#0d1b2a] text-rose-300 font-mono font-semibold">
+                    {chaosScenarios.length} DRILLS
+                  </span>
+                )}
+              </button>
             </div>
           </div>
 
@@ -557,6 +602,82 @@ export const App: React.FC = () => {
                 prometheusText={prometheusText}
                 otlpJson={otlpJson}
               />
+            </div>
+          ) : centerTab === 'chaos' ? (
+            <div className="flex flex-col space-y-4">
+              {/* Chaos Lab Sub-Navigation Bar */}
+              <div className="flex items-center justify-between bg-[#1b263b] p-1.5 rounded-xl border border-[#415a77]/80">
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => setChaosSubTab('scenarios')}
+                    className={`flex items-center gap-2 px-3 py-1 rounded-lg text-xs font-medium transition-all ${
+                      chaosSubTab === 'scenarios'
+                        ? 'bg-[#415a77] text-[#e0e1dd] shadow font-semibold'
+                        : 'text-[#778da9] hover:text-[#e0e1dd]'
+                    }`}
+                  >
+                    <FlaskConical className="w-3.5 h-3.5 text-rose-400" />
+                    Chaos Monkey Drills
+                  </button>
+                  <button
+                    onClick={() => setChaosSubTab('partitions')}
+                    className={`flex items-center gap-2 px-3 py-1 rounded-lg text-xs font-medium transition-all ${
+                      chaosSubTab === 'partitions'
+                        ? 'bg-[#415a77] text-[#e0e1dd] shadow font-semibold'
+                        : 'text-[#778da9] hover:text-[#e0e1dd]'
+                    }`}
+                  >
+                    <Network className="w-3.5 h-3.5 text-amber-400" />
+                    Network Partition Matrix & Mesh
+                  </button>
+                  <button
+                    onClick={() => setChaosSubTab('byzantine')}
+                    className={`flex items-center gap-2 px-3 py-1 rounded-lg text-xs font-medium transition-all ${
+                      chaosSubTab === 'byzantine'
+                        ? 'bg-[#415a77] text-[#e0e1dd] shadow font-semibold'
+                        : 'text-[#778da9] hover:text-[#e0e1dd]'
+                    }`}
+                  >
+                    <ShieldAlert className="w-3.5 h-3.5 text-purple-400" />
+                    Byzantine Fault Injector
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2 text-xs font-mono text-[#778da9] px-2">
+                  <span>Subnets: <strong className="text-[#e0e1dd]">{subnets.length}</strong></span>
+                  <span>|</span>
+                  <span>Traitors: <strong className="text-rose-400">{byzantineTraitors.length}</strong></span>
+                </div>
+              </div>
+
+              {chaosSubTab === 'scenarios' ? (
+                <ChaosExperimentConsole
+                  scenarios={chaosScenarios}
+                  state={chaosState}
+                  onStartScenario={startChaosScenario}
+                  onStopScenario={stopChaosScenario}
+                />
+              ) : chaosSubTab === 'partitions' ? (
+                <NetworkPartitionCanvas
+                  nodes={['lb-1', ...serverNodes.map((s) => s.id), ...dbNodes.map((d) => d.id), 'cache-1']}
+                  matrix={partitionMatrix}
+                  subnets={subnets}
+                  onSeverLink={severPartitionLink}
+                  onConnectLink={connectPartitionLink}
+                  onDegradeLink={degradePartitionLink}
+                  onApplyPreset={applyPartitionPreset}
+                  onHealAll={healAllPartitions}
+                />
+              ) : (
+                <ByzantineTraitorPanel
+                  nodes={['lb-1', ...serverNodes.map((s) => s.id), ...dbNodes.map((d) => d.id), 'cache-1']}
+                  traitors={byzantineTraitors}
+                  events={byzantineEvents}
+                  onToggleTraitor={toggleByzantineTraitor}
+                  onClearEvents={clearByzantineEvents}
+                  onResetByzantine={resetByzantine}
+                />
+              )}
             </div>
           ) : (
             <Card
