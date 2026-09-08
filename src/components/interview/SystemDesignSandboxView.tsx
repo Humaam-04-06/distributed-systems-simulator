@@ -12,6 +12,7 @@ import {
   Zap,
   ArrowRightLeft,
   Activity,
+  Map,
 } from 'lucide-react';
 import {
   ScenarioId,
@@ -35,6 +36,7 @@ import { SystemDesignQuizModal } from './SystemDesignQuizModal';
 import { FailureModeCaseStudyModal } from './FailureModeCaseStudyModal';
 import { ScenarioBenchmarkModal } from './ScenarioBenchmarkModal';
 import { ArchitecturePresetLoader } from './ArchitecturePresetLoader';
+import { ArchitectureBlueprintModal } from './ArchitectureBlueprintModal';
 import { showSuccessAlert } from '../../utils/alerts';
 
 interface SystemDesignSandboxViewProps {
@@ -64,6 +66,7 @@ export const SystemDesignSandboxView: React.FC<SystemDesignSandboxViewProps> = (
   const [isFailureModalOpen, setIsFailureModalOpen] = useState(false);
   const [isBenchmarkOpen, setIsBenchmarkOpen] = useState(false);
   const [isPresetLoaderOpen, setIsPresetLoaderOpen] = useState(false);
+  const [isBlueprintModalOpen, setIsBlueprintModalOpen] = useState(false);
 
   const [evaluation, setEvaluation] = useState<ArchitectureEvaluationResult | null>(null);
 
@@ -306,6 +309,13 @@ export const SystemDesignSandboxView: React.FC<SystemDesignSandboxViewProps> = (
           >
             <Layers className="w-4 h-4" />
             Presets
+          </button>
+          <button
+            onClick={() => setIsBlueprintModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-[#0d1b2a] hover:bg-[#415a77] text-teal-300 border border-teal-500/40 transition-all cursor-pointer shadow-md"
+          >
+            <Map className="w-4 h-4" />
+            Topology
           </button>
           <button
             onClick={() => setIsQuizOpen(true)}
@@ -585,6 +595,12 @@ export const SystemDesignSandboxView: React.FC<SystemDesignSandboxViewProps> = (
         scenarioId={activeScenarioId}
         onClose={() => setIsPresetLoaderOpen(false)}
         onSelectPreset={handleSelectPreset}
+      />
+
+      <ArchitectureBlueprintModal
+        isOpen={isBlueprintModalOpen}
+        scenarioId={activeScenarioId}
+        onClose={() => setIsBlueprintModalOpen(false)}
       />
     </div>
   );
