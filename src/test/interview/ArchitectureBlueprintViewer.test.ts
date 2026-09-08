@@ -1,8 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  ArchitectureBlueprintViewer,
-  ARCHITECTURE_BLUEPRINTS,
-} from '../../engine/scenarios/ArchitectureBlueprintViewer';
+import { ArchitectureBlueprintViewer } from '../../engine/scenarios/ArchitectureBlueprintViewer';
 import { ScenarioId } from '../../engine/scenarios/ScenarioTypes';
 
 describe('ArchitectureBlueprintViewer', () => {
