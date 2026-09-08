@@ -49,6 +49,9 @@ export const Header: React.FC<HeaderProps> = ({
             <Badge variant="blue" size="sm" pulse>
               v1.0.0
             </Badge>
+            <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40">
+              Phase 12: Interview Sandbox
+            </span>
           </div>
           <p className="text-[11px] text-[#778da9] font-sans">
             High-Scale Architecture, Queuing & Failure Sandbox
