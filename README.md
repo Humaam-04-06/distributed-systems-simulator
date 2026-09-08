@@ -7,7 +7,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![TailwindCSS](https://img.shields.io/badge/TailwindCSS-3.4-38B2AC?style=flat-square&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
 [![Vitest](https://img.shields.io/badge/Vitest-5.0-FCC72B?style=flat-square&logo=vitest&logoColor=black)](https://vitest.dev/)
-[![Phases](https://img.shields.io/badge/Roadmap-12%2F12%20Phases%20Complete-10B981?style=flat-square)](#-project-roadmap-status)
+![Status](https://img.shields.io/badge/Status-Complete-10B981?style=flat-square)
 [![Tests](https://img.shields.io/badge/Tests-81%2F81%20Passing-brightgreen?style=flat-square)](#-testing)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
 
@@ -28,8 +28,6 @@
   - [Running Locally](#running-locally)
 - [Testing](#-testing)
 - [Production Build](#-production-build)
-- [Complete 12-Phase Roadmap](#-complete-12-phase-roadmap)
-- [Design Aesthetics](#-design-aesthetics)
 - [Author & License](#-author--license)
 
 ---
@@ -289,37 +287,6 @@ To preview the production build locally:
 ```bash
 npm run preview
 ```
-
----
-
-## 🗺️ Complete 12-Phase Roadmap
-
-| Phase | Milestone Name | Status | Key Deliverables |
-|:---:|---|:---:|---|
-| **Phase 1** | Project Scaffold & UI Primitives | ✅ Complete | Tailwind design tokens, Buttons, Badges, Sliders, Header |
-| **Phase 2** | Discrete Simulation Engine & Telemetry | ✅ Complete | Discrete clock, M/M/1 queuing, sliding-window latency percentiles |
-| **Phase 3** | Load Balancing & Consistent Hashing | ✅ Complete | Round Robin, Least Conn, 360° Consistent Hash Ring SVG |
-| **Phase 4** | Compute Cluster & Resource Pressure | ✅ Complete | CPU/RAM models, thread pool limits, watchdog supervisor |
-| **Phase 5** | Database Replication & Failover | ✅ Complete | Sync/Async WAL streaming, replication lag, split-brain STONITH |
-| **Phase 6** | Tiered Caching & Eviction Policies | ✅ Complete | Redis cluster, LRU/LFU/FIFO, XFetch stampede defense |
-| **Phase 7** | Circuit Breakers & Retry Jitter | ✅ Complete | Hystrix state machine, AWS Full Jitter, fallback degradation |
-| **Phase 8** | Bulkhead Pattern Isolation | ✅ Complete | Thread pool and connection pool bulkheads with queue backpressure |
-| **Phase 9** | Observability & Metrics Dashboard | ✅ Complete | P50/P90/P99 latency histograms, live RPS charts, alert feeds |
-| **Phase 10** | Chaos Lab, Partitions & Byzantine Faults | ✅ Complete | Network partition matrix, Lamport Byzantine traitors, Chaos drills |
-| **Phase 11** | Multi-Region Active-Active & Geo-DNS | ✅ Complete | Geo-Proximity, subsea cable physical WAN, 1-click evacuation |
-| **Phase 12** | System Design Interview Sandbox | ✅ Complete | 6 FAANG scenarios, napkin math, architecture evaluator, quizzes |
-
----
-
-## 🎨 Design Aesthetics
-
-The user interface follows a curated **Deep Space Navy** dark palette designed for extended engineering sessions:
-- **Primary Background**: `#0d1b2a`
-- **Surface / Card Background**: `#1b263b`
-- **Borders & Dividers**: `#415a77`
-- **Muted Metadata & Labels**: `#778da9`
-- **High-Contrast Text**: `#e0e1dd`
-- **Dialogs & Notifications**: Styled exclusively using **SweetAlert2** with custom theme tokens.
 
 ---
 
