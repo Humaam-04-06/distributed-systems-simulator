@@ -28,7 +28,6 @@
   - [Running Locally](#running-locally)
 - [Testing](#-testing)
 - [Production Build](#-production-build)
-- [Release Guide](#-release-guide)
 - [Complete 12-Phase Roadmap](#-complete-12-phase-roadmap)
 - [Design Aesthetics](#-design-aesthetics)
 - [Author & License](#-author--license)
@@ -293,32 +292,6 @@ npm run preview
 
 ---
 
-## 🚢 Release Guide
-
-To publish a formal release on GitHub:
-
-```bash
-# 1. Ensure you are on main and all changes are committed
-git checkout main
-git pull origin main
-
-# 2. Create an annotated git release tag
-git tag -a v1.0.0 -m "Release v1.0.0: Distributed Systems & System Design Interview Simulator"
-
-# 3. Push the tag to GitHub
-git push origin v1.0.0
-```
-
-#### Creating the GitHub Release via Web UI:
-1. Go to your repository on GitHub: `https://github.com/Humaam-04-06/distributed-systems-simulator/releases`.
-2. Click **Draft a new release**.
-3. Choose the tag `v1.0.0`.
-4. Set Release Title: **v1.0.0 — Production Release: Complete 12-Phase Distributed Architecture Simulator**.
-5. Paste the release notes highlighting the 12 phases, 81 tests, and System Design Sandbox.
-6. Click **Publish release**.
-
----
-
 ## 🗺️ Complete 12-Phase Roadmap
 
 | Phase | Milestone Name | Status | Key Deliverables |
@@ -353,5 +326,4 @@ The user interface follows a curated **Deep Space Navy** dark palette designed f
 ## 👤 Author & License
 
 - **Author**: Humaam Ahmed ([@Humaam-04-06](https://github.com/Humaam-04-06))
-- **Email**: humaamahmed40@gmail.com
 - **License**: Released under the [MIT License](LICENSE). Free to use, modify, and distribute for educational, commercial, and interview preparation purposes.
