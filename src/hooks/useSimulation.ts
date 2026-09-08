@@ -43,6 +43,7 @@ import {
   SubseaCableId,
   SubseaCable,
 } from '../engine/MultiRegionTypes';
+import { ScenarioId, ArchitectureEvaluationResult } from '../engine/scenarios/ScenarioTypes';
 import {
   IncidentEvent,
   ServerNodeState,
@@ -175,6 +176,30 @@ export function useSimulation() {
   );
   const [severedCables, setSeveredCables] = useState<SubseaCableId[]>(
     engine.getSeveredCables()
+  );
+
+  // System Design Interview Engine states
+  const [challengeRunner] = useState(() => engine.challengeRunner);
+  const [hintsEngine] = useState(() => engine.hintsEngine);
+
+  const loadArchitecturePreset = useCallback(
+    (presetId: string) => {
+      const success = engine.loadArchitecturePreset(presetId);
+      if (success) {
+        setServerNodes(engine.serverNodes.map((s) => ({ ...s })));
+        setDbNode({ ...engine.dbNode });
+        setConfig({ ...engine.config });
+      }
+      return success;
+    },
+    [engine]
+  );
+
+  const evaluateArchitecture = useCallback(
+    (scenarioId?: ScenarioId): ArchitectureEvaluationResult => {
+      return engine.evaluateCurrentArchitecture(scenarioId);
+    },
+    [engine]
   );
 
   // Subscribe to engine tick notifications
@@ -743,5 +768,9 @@ export function useSimulation() {
     severSubseaCable,
     healSubseaCable,
     healAllMultiRegion,
+    challengeRunner,
+    hintsEngine,
+    loadArchitecturePreset,
+    evaluateArchitecture,
   };
 }
