@@ -212,8 +212,8 @@ Distributed_Systems_Simulator/
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/Humaam-04-06/Distributed_Systems_Simulator.git
-   cd Distributed_Systems_Simulator
+   git clone https://github.com/Humaam-04-06/distributed-systems-simulator.git
+   cd distributed-systems-simulator
    ```
 
 2. **Install project dependencies:**
@@ -310,7 +310,7 @@ git push origin v1.0.0
 ```
 
 #### Creating the GitHub Release via Web UI:
-1. Go to your repository on GitHub: `https://github.com/Humaam-04-06/Distributed_Systems_Simulator/releases`.
+1. Go to your repository on GitHub: `https://github.com/Humaam-04-06/distributed-systems-simulator/releases`.
 2. Click **Draft a new release**.
 3. Choose the tag `v1.0.0`.
 4. Set Release Title: **v1.0.0 — Production Release: Complete 12-Phase Distributed Architecture Simulator**.
